@@ -256,6 +256,10 @@
               
               if (isEstimated) {
                 const targetCoords = await getCoordinates(destinazione);
+                console.log('=== CALCOLO DISTANZE PORTI ===');
+                console.log('Destinazione richiesta:', destinazione);
+                console.log('Coordinate destinazione:', targetCoords);
+                
                 const portCoords = {
                   'VENEZIA': { lat: 45.4408, lon: 12.3155 },
                   'TRIESTE': { lat: 45.6495, lon: 13.7768 },
@@ -275,15 +279,25 @@
                   
                   if (portCoord && targetCoords) {
                     const distance = calculateDistance(targetCoords, portCoord);
+                    console.log(`Porto ${combo.porto}:`, {
+                      coordinate: portCoord,
+                      distanza_km: distance.toFixed(1),
+                      costo_medio: avgCost.toFixed(2),
+                      num_ordini: combo.costs.length
+                    });
+                    
                     combosWithDistance.push({
                       ...combo,
                       avgCost,
                       numOrders: combo.costs.length,
                       portDistance: distance
                     });
+                  } else {
+                    console.log(`Porto ${combo.porto}: coordinate non trovate`);
                   }
                 }
                 
+                console.log('--- Ordinamento porti ---');
                 // Ordina per distanza porto, poi per costo
                 combosWithDistance.sort((a, b) => {
                   // Prima criterio: distanza porto (peso maggiore)
@@ -293,9 +307,13 @@
                   return a.avgCost - b.avgCost;
                 });
                 
+                combosWithDistance.forEach((c, i) => {
+                  console.log(`${i+1}. ${c.porto} - ${c.portDistance.toFixed(0)}km - €${c.avgCost.toFixed(2)}/ton`);
+                });
+                
                 if (combosWithDistance.length > 0) {
                   bestOption = combosWithDistance[0];
-                  console.log('Porto scelto:', bestOption.porto, 'distanza:', bestOption.portDistance.toFixed(0), 'km');
+                  console.log('✓ PORTO SCELTO:', bestOption.porto, '-', bestOption.portDistance.toFixed(0), 'km');
                 }
                 
               } else {
