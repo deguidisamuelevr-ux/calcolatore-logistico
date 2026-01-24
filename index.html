@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Logistics Smart Pro - Ultra-Compatible</title>
+    <title>Logistics Expert - Breakdown Analitico</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-slate-50 text-slate-900 font-sans">
+<body class="bg-slate-100 text-slate-900 font-sans">
     <div id="root"></div>
 
     <script type="text/babel">
@@ -20,10 +20,9 @@
             const [destinations, setDestinations] = useState([]);
             const [loading, setLoading] = useState(true);
             const [calculating, setCalculating] = useState(false);
-            
             const [targetDest, setTargetDest] = useState('');
             const [mode, setMode] = useState('');
-            const [tons, setTons] = useState('');
+            const [tonsInput, setTonsInput] = useState('');
             const [result, setResult] = useState(null);
 
             const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR-MthW0ItRfSSthoga_Tvd7w1_OMdDXZylZQhLjG5I0bk1cEGZjqPsFUt6I373L4oFpw156lvbvYHJ/pub?output=csv';
@@ -32,45 +31,47 @@
                 fetch(CSV_URL)
                     .then(res => res.text())
                     .then(text => {
-                        // Supporto per CSV con virgolette e virgole nei campi
                         const rows = text.split(/\r?\n/).filter(line => line.trim());
                         const headers = rows[0].split(',').map(h => h.replace(/"/g, '').trim().toUpperCase());
-                        
-                        // Mappatura flessibile delle colonne
+                        const find = (key) => headers.findIndex(h => h.includes(key));
+
                         const colIdx = {
-                            modalita: headers.findIndex(h => h.includes('MODAL')),
-                            porto: headers.findIndex(h => h.includes('PORTO')),
-                            forwarder: headers.findIndex(h => h.includes('FORWARD') || h.includes('FORNITORE')),
-                            destinazione: headers.findIndex(h => h.includes('DESTIN')),
-                            costo: headers.findIndex(h => h.includes('€') || h.includes('TON') || h.includes('COSTO')),
-                            ordine: headers.findIndex(h => h.includes('ORDINE'))
+                            modalita: find('MODAL'), porto: find('PORTO'), fwd: find('FORWARD'),
+                            dest: find('DESTIN'), inland: find('INLAND'), terminal: find('CICLO TERMINAL'),
+                            freeout: find('FREE OUT'), do: find('DELIVERY ORDER'), dogana: find('DOGANA'),
+                            diritto: find('DIRITTO FISSO'), flegt: find('FLEGT'), visita: find('VISITA'),
+                            soste: find('SOSTE'), svincolo: find('SVINCOLO'), tons: find('TON'),
+                            ordine: find('ORDINE')
                         };
 
                         const parsed = rows.slice(1).map(row => {
-                            // Regex per dividere CSV rispettando le virgolette (es: "1.200,50")
-                            const values = row.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || row.split(',');
-                            const clean = (val) => val ? val.replace(/"/g, '').trim() : '';
-                            
-                            return {
-                                modalita: clean(values[colIdx.modalita]),
-                                porto: clean(values[colIdx.porto]),
-                                forwarder: clean(values[colIdx.forwarder]),
-                                destinazione: clean(values[colIdx.destinazione]),
-                                costo: clean(values[colIdx.costo]),
-                                ordine: clean(values[colIdx.ordine])
+                            const v = row.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || row.split(',');
+                            const n = (idx) => {
+                                if (idx === -1 || !v[idx]) return 0;
+                                return parseFloat(v[idx].replace(/"/g, '').replace(',', '.')) || 0;
                             };
-                        }).filter(r => r.ordine && r.costo);
+                            const s = (idx) => (idx !== -1 && v[idx]) ? v[idx].replace(/"/g, '').trim() : '';
+
+                            return {
+                                modalita: s(colIdx.modalita), porto: s(colIdx.porto), fwd: s(colIdx.fwd),
+                                dest: s(colIdx.dest), tons: n(colIdx.tons),
+                                inland: n(colIdx.inland), terminal: n(colIdx.terminal),
+                                fixedSum: n(colIdx.freeout) + n(colIdx.do) + n(colIdx.dogana) + 
+                                          n(colIdx.diritto) + n(colIdx.flegt) + n(colIdx.visita) + 
+                                          n(colIdx.soste) + n(colIdx.svincolo),
+                                ordine: s(colIdx.ordine)
+                            };
+                        }).filter(r => r.ordine);
                         
                         setData(parsed);
-                        setDestinations([...new Set(parsed.map(r => r.destinazione))].sort());
+                        setDestinations([...new Set(parsed.map(r => r.dest))].sort());
                         setLoading(false);
-                    }).catch(e => alert("Errore caricamento dati: " + e.message));
+                    });
             }, []);
 
             const getCoords = async (city) => {
                 const db = { 'LIVORNO': {lat:43.54, lon:10.31}, 'VENEZIA': {lat:45.44, lon:12.31}, 'GENOVA': {lat:44.40, lon:8.94}, 'RAVENNA': {lat:44.41, lon:12.20}, 'LA SPEZIA': {lat:44.10, lon:9.82}, 'TRIESTE': {lat:45.64, lon:13.77} };
-                const c = city.toUpperCase();
-                if (db[c]) return db[c];
+                if (db[city.toUpperCase()]) return db[city.toUpperCase()];
                 try {
                     const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(city)},Italy&limit=1`);
                     const d = await r.json();
@@ -82,149 +83,165 @@
                 try {
                     const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${c1.lon},${c1.lat};${c2.lon},${c2.lat}?overview=false`);
                     const d = await r.json();
-                    if (d.code === 'Ok') return d.routes[0].distance / 1000;
-                } catch {}
-                const R = 6371;
-                const dLat = (c2.lat-c1.lat)*Math.PI/180;
-                const dLon = (c2.lon-c1.lon)*Math.PI/180;
-                const a = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(c1.lat*Math.PI/180)*Math.cos(c2.lat*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);
-                return (R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))) * 1.25;
+                    return d.code === 'Ok' ? d.routes[0].distance / 1000 : null;
+                } catch { return null; }
             };
 
             const calculate = async () => {
-                if (!targetDest || !mode || !tons) return alert("Compila tutti i campi");
+                if (!targetDest || !mode || !tonsInput) return alert("Inserisci tutti i dati");
                 setCalculating(true);
-                setResult(null);
-
                 try {
                     const targetCoords = await getCoords(targetDest);
                     if (!targetCoords) throw new Error("Città non trovata");
 
-                    // Filtro ultra-tollerante per la modalità
                     const filtered = data.filter(r => r.modalita.toUpperCase().includes(mode.toUpperCase()));
-                    if (filtered.length === 0) throw new Error(`Nessun dato per '${mode}'. Verifica che la colonna modalità contenga questo termine.`);
-
-                    const uniquePorts = [...new Set(filtered.map(r => r.porto))];
+                    const ports = [...new Set(filtered.map(r => r.porto))];
+                    
                     let portDists = [];
-                    for (const p of uniquePorts) {
+                    for (const p of ports) {
                         const pc = await getCoords(p);
                         if (pc) {
                             const d = await getRoadDist(pc, targetCoords);
-                            portDists.push({ name: p, dist: d, coords: pc });
+                            if (d) portDists.push({ name: p, dist: d, coords: pc });
                         }
                     }
-
                     portDists.sort((a,b) => a.dist - b.dist);
                     const nearestPort = portDists[0];
-                    const portOrders = filtered.filter(r => r.porto === nearestPort.name);
-                    const forwarders = [...new Set(portOrders.map(r => r.forwarder))];
 
-                    let finalOptions = [];
-                    for (const fwd of forwarders) {
-                        const fwdOrders = portOrders.filter(o => o.forwarder === fwd);
-                        const exact = fwdOrders.filter(o => o.destinazione.toUpperCase() === targetDest.toUpperCase());
+                    const portOrders = filtered.filter(r => r.porto === nearestPort.name);
+                    const fwds = [...new Set(portOrders.map(r => r.fwd))];
+
+                    let options = [];
+                    for (const fwd of fwds) {
+                        const fwdOrders = portOrders.filter(o => o.fwd === fwd);
+                        const exact = fwdOrders.filter(o => o.dest.toUpperCase() === targetDest.toUpperCase());
                         
-                        let unitCost = 0;
+                        let fixedPart = 0;
+                        let inlandPart = 0;
+
                         if (exact.length > 0) {
-                            let wSum = 0, cSum = 0;
+                            // Media ponderata esatta
+                            let wSum = 0, fSum = 0, iSum = 0;
                             exact.forEach((o, i) => {
                                 const w = i + 1;
-                                const c = parseFloat(o.costo.replace(',', '.'));
-                                if(!isNaN(c)) { cSum += (c * w); wSum += w; }
+                                fSum += ((o.fixedSum + (mode==='TRUCK' ? o.terminal : 0)) / o.tons) * w;
+                                iSum += (o.inland / o.tons) * w;
+                                wSum += w;
                             });
-                            unitCost = cSum / wSum;
+                            fixedPart = fSum / wSum;
+                            inlandPart = iSum / wSum;
                         } else {
-                            let rates = [];
-                            for (const o of fwdOrders.slice(-5)) {
-                                const oc = await getCoords(o.destinazione);
+                            // Stima proporzionale
+                            let kmRates = [];
+                            let fixRates = [];
+                            for (const o of fwdOrders.slice(-8)) {
+                                const oc = await getCoords(o.dest);
                                 if (oc) {
                                     const d = await getRoadDist(nearestPort.coords, oc);
-                                    const c = parseFloat(o.costo.replace(',', '.'));
-                                    if (d > 0 && !isNaN(c)) rates.push(c / d);
+                                    if (d > 0 && o.tons > 0) {
+                                        kmRates.push((o.inland / d) / o.tons);
+                                        fixRates.push((o.fixedSum + (mode==='TRUCK' ? o.terminal : 0)) / o.tons);
+                                    }
                                 }
                             }
-                            unitCost = (rates.length > 0 ? rates.reduce((a,b)=>a+b,0)/rates.length : 1.4) * nearestPort.dist;
+                            fixedPart = fixRates.length > 0 ? fixRates.reduce((a,b)=>a+b,0)/fixRates.length : 15;
+                            inlandPart = (kmRates.length > 0 ? kmRates.reduce((a,b)=>a+b,0)/kmRates.length : 0.08) * nearestPort.dist;
                         }
-                        finalOptions.push({ porto: nearestPort.name, fwd, unitCost, dist: nearestPort.dist, isEst: exact.length === 0 });
+
+                        options.push({
+                            porto: nearestPort.name, fwd, 
+                            fixedPart, inlandPart, 
+                            unitCost: fixedPart + inlandPart,
+                            dist: nearestPort.dist, isEst: exact.length === 0
+                        });
                     }
 
-                    finalOptions.sort((a,b) => a.unitCost - b.unitCost);
-                    setResult(finalOptions[0]);
-
-                } catch (e) {
-                    alert(e.message);
-                } finally {
-                    setCalculating(false);
-                }
+                    options.sort((a,b) => a.unitCost - b.unitCost);
+                    setResult(options[0]);
+                } catch (e) { alert(e.message); } finally { setCalculating(false); }
             };
 
-            if (loading) return <div className="h-screen flex items-center justify-center font-bold text-blue-600 animate-pulse">CARICAMENTO DATI AZIENDALI...</div>;
+            if (loading) return <div className="h-screen flex items-center justify-center font-bold text-blue-600 animate-pulse">CARICAMENTO ANALITICO...</div>;
 
             return (
-                <div className="max-w-md mx-auto min-h-screen bg-slate-50 flex flex-col">
-                    <header className="bg-blue-800 p-8 pt-12 rounded-b-[3rem] shadow-xl text-white">
-                        <h1 className="text-3xl font-black italic tracking-tighter">LOGI-PRO</h1>
-                        <p className="text-blue-300 text-[10px] font-bold uppercase tracking-[0.2em] mt-1">Smart Routing Engine</p>
+                <div className="max-w-md mx-auto min-h-screen pb-10 flex flex-col">
+                    <header className="bg-slate-900 p-8 pt-12 rounded-b-[2.5rem] shadow-xl text-white">
+                        <h1 className="text-3xl font-black italic tracking-tighter text-blue-400">LOGI-ANALITYCS</h1>
+                        <p className="text-[10px] font-bold uppercase tracking-widest mt-2 opacity-50">Breakdown Costi Aziendali</p>
                     </header>
 
-                    <main className="px-6 -mt-10 flex-grow">
-                        <div className="bg-white p-7 rounded-[2rem] shadow-2xl space-y-5 border border-slate-100">
+                    <main className="px-6 -mt-8 flex-grow">
+                        <div className="bg-white p-7 rounded-[2.5rem] shadow-2xl space-y-4 border border-slate-100">
                             <div>
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Destinazione</label>
-                                <input type="text" list="dl" value={targetDest} onChange={e=>setTargetDest(e.target.value)} className="w-full mt-1 p-4 bg-slate-50 rounded-2xl border-none outline-none font-bold text-slate-700" placeholder="Cerca città..." />
+                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2">Destinazione</label>
+                                <input type="text" list="dl" value={targetDest} onChange={e=>setTargetDest(e.target.value)} className="w-full mt-1 p-4 bg-slate-50 rounded-2xl border-none outline-none font-bold" placeholder="Oppeano, Verona..." />
                                 <datalist id="dl">{destinations.map(d=><option key={d} value={d}/>)}</datalist>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Modalità</label>
-                                    <select value={mode} onChange={e=>setMode(e.target.value)} className="w-full mt-1 p-4 bg-slate-50 rounded-2xl border-none outline-none font-bold text-slate-700">
+                                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2">Modalità</label>
+                                    <select value={mode} onChange={e=>setMode(e.target.value)} className="w-full mt-1 p-4 bg-slate-50 rounded-2xl border-none font-bold">
                                         <option value="">Scegli...</option>
                                         <option value="CONTAINER">Container</option>
-                                        <option value="TRUCK">Camion</option>
+                                        <option value="TRUCK">Truck</option>
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Tonnellate</label>
-                                    <input type="number" value={tons} onChange={e=>setTons(e.target.value)} className="w-full mt-1 p-4 bg-slate-50 rounded-2xl border-none outline-none font-bold text-slate-700" placeholder="es. 25" />
+                                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2">Tonnellate</label>
+                                    <input type="number" value={tonsInput} onChange={e=>setTonsInput(e.target.value)} className="w-full mt-1 p-4 bg-slate-50 rounded-2xl border-none font-bold" placeholder="25" />
                                 </div>
                             </div>
-                            <button onClick={calculate} disabled={calculating} className="w-full bg-blue-600 text-white p-5 rounded-2xl font-black text-sm uppercase tracking-widest shadow-lg shadow-blue-200 active:scale-95 transition-all">
-                                {calculating ? "ELABORAZIONE IN CORSO..." : "CALCOLA MIGLIOR PORTO"}
+                            <button onClick={calculate} disabled={calculating} className="w-full bg-blue-600 text-white p-5 rounded-2xl font-black uppercase tracking-widest active:scale-95 transition-all shadow-lg shadow-blue-200">
+                                {calculating ? "ELABORAZIONE DATI..." : "ESTRAI PREVENTIVO"}
                             </button>
                         </div>
 
                         {result && (
-                            <div className="mt-8 bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl animate-in fade-in slide-in-from-bottom-6 duration-500">
-                                <div className="flex justify-between items-start mb-6">
-                                    <span className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest ${result.isEst ? 'bg-amber-500' : 'bg-green-500'}`}>
-                                        {result.isEst ? "Nuova Destinazione" : "Dato Storico"}
-                                    </span>
-                                    <div className="text-right">
-                                        <p className="text-[10px] text-slate-500 font-bold uppercase">Porto Ottimale</p>
-                                        <p className="text-2xl font-black text-blue-400 italic uppercase leading-none mt-1">{result.porto}</p>
+                            <div className="mt-8 space-y-4 animate-in fade-in slide-in-from-bottom-6 duration-500">
+                                <div className="bg-white rounded-[2.5rem] p-8 shadow-2xl border border-slate-50">
+                                    <div className="flex justify-between items-start mb-6">
+                                        <div className="text-left">
+                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Porto Suggerito</p>
+                                            <p className="text-2xl font-black text-slate-800 italic uppercase">{result.porto}</p>
+                                        </div>
+                                        <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${result.isEst ? 'bg-amber-100 text-amber-600' : 'bg-green-100 text-green-600'}`}>
+                                            {result.isEst ? "Calcolo Stimato" : "Dato Storico"}
+                                        </span>
                                     </div>
-                                </div>
-                                
-                                <div className="space-y-1 mb-8">
-                                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Fornitore</p>
-                                    <p className="text-xl font-bold">{result.fwd}</p>
-                                    <p className="text-xs text-blue-300 italic font-medium">{Math.round(result.dist)} KM stradali</p>
-                                </div>
 
-                                <div className="bg-white/5 p-6 rounded-[1.5rem] border border-white/10">
-                                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1 text-center">Costo Totale Stimato</p>
-                                    <p className="text-5xl font-black text-center tracking-tighter">€ {(result.unitCost * tons).toLocaleString('it-IT', {minimumFractionDigits: 2})}</p>
-                                    <div className="flex justify-between mt-4 pt-4 border-t border-white/5">
-                                        <span className="text-[10px] font-bold text-slate-500 uppercase italic">Tariffa:</span>
-                                        <span className="text-[10px] font-black text-blue-400">€ {result.unitCost.toFixed(2)} / TON</span>
+                                    <div className="space-y-4">
+                                        <div className="flex justify-between items-center border-b border-slate-50 pb-2">
+                                            <span className="text-[11px] font-bold text-slate-500 uppercase">Forwarder</span>
+                                            <span className="text-sm font-black text-slate-800">{result.fwd}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center border-b border-slate-50 pb-2">
+                                            <span className="text-[11px] font-bold text-slate-500 uppercase italic">Oneri Sbarco/Fissi (ton)</span>
+                                            <span className="text-sm font-bold text-slate-700">€ {result.fixedPart.toFixed(2)}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center border-b border-slate-50 pb-2">
+                                            <span className="text-[11px] font-bold text-slate-500 uppercase italic">Inland/Trasporto (ton)</span>
+                                            <span className="text-sm font-bold text-slate-700">€ {result.inlandPart.toFixed(2)}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center pt-2">
+                                            <span className="text-[11px] font-black text-blue-600 uppercase">Tariffa Totale Unitario</span>
+                                            <span className="text-lg font-black text-blue-600 italic">€ {result.unitCost.toFixed(2)} / ton</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-8 bg-slate-900 p-6 rounded-[2rem] text-center shadow-inner relative overflow-hidden">
+                                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1 relative z-10">Costo Logistico Totale</p>
+                                        <p className="text-5xl font-black text-white tracking-tighter relative z-10">
+                                            € {(result.unitCost * tonsInput).toLocaleString('it-IT', {minimumFractionDigits: 2})}
+                                        </p>
+                                        <p className="text-[10px] text-blue-400 font-bold mt-2 uppercase tracking-widest relative z-10 italic">
+                                            Per {tonsInput} Tonnellate
+                                        </p>
                                     </div>
                                 </div>
+                                <p className="text-center text-[8px] text-slate-400 uppercase font-bold tracking-[0.3em]">Calcolo basato su distanze stradali reali OSRM</p>
                             </div>
                         )}
                     </main>
-                    <footer className="p-8 text-center">
-                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-[0.3em]">Logistics Intelligence System • V2.0</p>
-                    </footer>
                 </div>
             );
         };
