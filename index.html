@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calcolo Costi Logistici</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // Componenti SVG
+        const Calculator = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/></svg>;
+        const TrendingDown = () => <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>;
+        const Package = () => <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>;
+        const Truck = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="3" width="15" height="13"/><circle cx="5.5" cy="18.5" r="2.5"/></svg>;
+        const MapPin = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>;
+        const AlertCircle = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/></svg>;
+        const Loader = () => <svg className="animate-spin" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/></svg>;
+
+        const App = () => {
+          const [excelData, setExcelData] = useState(null);
+          const [destinazione, setDestinazione] = useState('');
+          const [modalita, setModalita] = useState('');
+          const [tonnellate, setTonnellate] = useState('');
+          const [risultato, setRisultato] = useState(null);
+          const [availableDestinations, setAvailableDestinations] = useState([]);
+          const [isCalculating, setIsCalculating] = useState(false);
+          const [isLoading, setIsLoading] = useState(true);
+          const [dataError, setDataError] = useState(false);
+          const [errorMessage, setErrorMessage] = useState('');
+
+          const GOOGLE_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR-MthW0ItRfSSthoga_Tvd7w1_OMdDXZylZQhLjG5I0bk1cEGZjqPsFUt6I373L4oFpw156lvbvYHJ/pub?output=csv';
+
+          const italianCities = {
+            'milano': { lat: 45.4642, lon: 9.1900 },
+            'roma': { lat: 41.9028, lon: 12.4964 },
+            'napoli': { lat: 40.8518, lon: 14.2681 },
+            'verona': { lat: 45.4384, lon: 10.9916 },
+            'brescia': { lat: 45.5416, lon: 10.2118 },
+            'oppeano': { lat: 45.3167, lon: 11.1000 }
+          };
+
+          useEffect(() => {
+            loadData();
+          }, []);
+
+          const loadData = async () => {
+            try {
+              setIsLoading(true);
+              setDataError(false);
+              console.log('Caricamento da:', GOOGLE_SHEET_CSV_URL);
+
+              const response = await fetch(GOOGLE_SHEET_CSV_URL);
+              
+              if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+              }
+              
+              const csvText = await response.text();
+              console.log('CSV caricato, primi 500 caratteri:', csvText.substring(0, 500));
+              
+              const lines = csvText.split('\n');
+              const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+              
+              console.log('Headers:', headers);
+              
+              const data = [];
+              for (let i = 1; i < lines.length; i++) {
+                if (!lines[i].trim()) continue;
+                
+                const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
+                const row = {};
+                
+                headers.forEach((header, index) => {
+                  const value = values[index] || '';
+                  row[header] = isNaN(value) || value === '' ? value : parseFloat(value);
+                });
+                
+                if (row.ORDINE && row['€/TON']) {
+                  data.push(row);
+                }
+              }
+              
+              console.log('Dati caricati:', data.length);
+              if (data.length > 0) console.log('Primo:', data[0]);
+              
+              setExcelData(data);
+              const dests = [...new Set(data.map(r => r.DESTINAZIONE).filter(Boolean))];
+              setAvailableDestinations(dests.sort());
+              
+            } catch (error) {
+              console.error('ERRORE:', error);
+              setDataError(true);
+              setErrorMessage(error.message);
+            } finally {
+              setIsLoading(false);
+            }
+          };
+
+          const calculateBestOption = async () => {
+            if (!destinazione || !modalita || !tonnellate) {
+              alert('Compila tutti i campi');
+              return;
+            }
+            
+            setIsCalculating(true);
+            
+            try {
+              const filtered = excelData.filter(r => r["MODALITA'"] === modalita && r['€/TON']);
+              
+              if (filtered.length === 0) {
+                alert('Nessun ordine per questa modalità');
+                setIsCalculating(false);
+                return;
+              }
+              
+              const exact = filtered.filter(r => r.DESTINAZIONE === destinazione);
+              
+              let ordersToUse = exact.length > 0 ? exact : filtered;
+              let isEstimated = exact.length === 0;
+              
+              // Calcola il costo medio
+              let totalCost = 0;
+              let totalWeight = 0;
+              let bestPorto = '';
+              let bestForwarder = '';
+              
+              ordersToUse.forEach(order => {
+                const cost = parseFloat(order['€/TON']);
+                totalCost += cost;
+                totalWeight += 1;
+                
+                if (!bestPorto) {
+                  bestPorto = order.PORTO;
+                  bestForwarder = order.FORWARDER;
+                }
+              });
+              
+              const avgCost = totalCost / totalWeight;
+              const ton = parseFloat(tonnellate);
+              
+              setRisultato({
+                porto: bestPorto,
+                forwarder: bestForwarder,
+                costoPerTon: avgCost.toFixed(2),
+                costoTotale: (avgCost * ton).toFixed(2),
+                tonnellate: ton,
+                numOrdiniStorici: ordersToUse.length,
+                isEstimated: isEstimated
+              });
+              
+            } catch (error) {
+              console.error('Errore calcolo:', error);
+              alert('Errore nel calcolo');
+            } finally {
+              setIsCalculating(false);
+            }
+          };
+
+          if (isLoading) {
+            return (
+              <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+                <div className="text-center">
+                  <Loader />
+                  <p className="text-gray-600 text-lg mt-4">Caricamento...</p>
+                </div>
+              </div>
+            );
+          }
+
+          if (dataError) {
+            return (
+              <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+                <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md">
+                  <AlertCircle />
+                  <h2 className="text-xl font-bold mb-4">Errore Caricamento</h2>
+                  <p className="text-gray-600 mb-4">Impossibile caricare i dati.</p>
+                  <div className="bg-red-50 p-3 rounded mb-4">
+                    <p className="text-sm text-red-800">{errorMessage}</p>
+                  </div>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Apri la Console (F12) per vedere i dettagli dell'errore.
+                  </p>
+                  <button
+                    onClick={loadData}
+                    className="w-full bg-indigo-600 text-white py-3 rounded-lg"
+                  >
+                    Riprova
+                  </button>
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+              <div className="max-w-3xl mx-auto">
+                <div className="bg-white rounded-2xl shadow-xl p-8 mb-6">
+                  <div className="flex items-center gap-3 mb-6">
+                    <Package />
+                    <h1 className="text-3xl font-bold text-gray-800">Calcolo Costi Logistici</h1>
+                  </div>
+
+                  <div className="bg-green-50 border-l-4 border-green-500 p-4 mb-6">
+                    <p className="text-sm text-green-800">
+                      <strong>✓ Connesso</strong> - {excelData.length} ordini caricati
+                    </p>
+                  </div>
+
+                  <div className="space-y-6">
+                    <div>
+                      <label className="block mb-2 font-semibold flex items-center gap-2">
+                        <MapPin />
+                        Destinazione
+                      </label>
+                      <input
+                        type="text"
+                        value={destinazione}
+                        onChange={(e) => setDestinazione(e.target.value)}
+                        placeholder="es. Milano"
+                        list="dests"
+                        className="w-full px-4 py-3 border rounded-lg"
+                      />
+                      <datalist id="dests">
+                        {availableDestinations.map(d => <option key={d} value={d} />)}
+                      </datalist>
+                    </div>
+
+                    <div>
+                      <label className="block mb-2 font-semibold flex items-center gap-2">
+                        <Truck />
+                        Modalità
+                      </label>
+                      <select
+                        value={modalita}
+                        onChange={(e) => setModalita(e.target.value)}
+                        className="w-full px-4 py-3 border rounded-lg"
+                      >
+                        <option value="">Seleziona...</option>
+                        <option value="Container">Container</option>
+                        <option value="Camion">Camion</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block mb-2 font-semibold">Tonnellate</label>
+                      <input
+                        type="number"
+                        value={tonnellate}
+                        onChange={(e) => setTonnellate(e.target.value)}
+                        placeholder="es. 25"
+                        step="0.01"
+                        className="w-full px-4 py-3 border rounded-lg"
+                      />
+                    </div>
+
+                    <button
+                      onClick={calculateBestOption}
+                      disabled={isCalculating}
+                      className="w-full bg-indigo-600 text-white font-bold py-4 rounded-lg flex items-center justify-center gap-2 disabled:bg-gray-400"
+                    >
+                      <Calculator />
+                      {isCalculating ? 'Calcolo...' : 'Calcola Preventivo'}
+                    </button>
+                  </div>
+                </div>
+
+                {risultato && (
+                  <div className="bg-white rounded-2xl shadow-xl p-8">
+                    {risultato.isEstimated && (
+                      <div className="bg-amber-50 border-l-4 border-amber-500 p-4 mb-6">
+                        <p className="text-sm text-amber-800">
+                          <strong>⚠️ Stima</strong> - Nessun ordine esatto per questa destinazione
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-3 mb-6">
+                      <TrendingDown />
+                      <h2 className="text-2xl font-bold">Preventivo</h2>
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-4 mb-6">
+                      <div className="bg-indigo-50 p-6 rounded-xl">
+                        <p className="text-sm text-gray-600">Porto</p>
+                        <p className="text-2xl font-bold text-indigo-700">{risultato.porto}</p>
+                      </div>
+                      <div className="bg-indigo-50 p-6 rounded-xl">
+                        <p className="text-sm text-gray-600">Forwarder</p>
+                        <p className="text-2xl font-bold text-indigo-700">{risultato.forwarder}</p>
+                      </div>
+                    </div>
+
+                    <div className="bg-green-50 p-6 rounded-xl">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-sm text-gray-600">€/Ton</p>
+                          <p className="text-3xl font-bold text-green-700">€{risultato.costoPerTon}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-600">Totale</p>
+                          <p className="text-3xl font-bold text-green-700">€{risultato.costoTotale}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <p className="text-sm text-gray-500 mt-4">
+                      Basato su {risultato.numOrdiniStorici} ordini
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        };
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
