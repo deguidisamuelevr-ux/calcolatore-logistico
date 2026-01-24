@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>Porto Ottimale – Analisi Logistica</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f6f8;
+      padding: 20px;
+    }
+    h1 { margin-bottom: 5px; }
+    input, button {
+      padding: 8px;
+      margin: 5px 0;
+    }
+    table {
+      border-collapse: collapse;
+      margin-top: 20px;
+      width: 100%;
+      background: #fff;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: center;
+    }
+    th {
+      background: #2c3e50;
+      color: #fff;
+    }
+    .chosen {
+      background: #d4edda;
+      font-weight: bold;
+    }
+    .log {
+      font-family: monospace;
+      background: #111;
+      color: #0f0;
+      padding: 10px;
+      margin-top: 20px;
+      max-height: 250px;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+
+<h1>🚢 Selezione Porto Ottimale</h1>
+<p>Carica il CSV, inserisci la destinazione finale e analizza.</p>
+
+<input type="file" id="csvFile" accept=".csv">
+<br>
+<input type="text" id="destination" placeholder="Destinazione (es. Oppeano, Italy)" size="40">
+<br>
+<button onclick="runAnalysis()">Analizza</button>
+
+<div id="output"></div>
+<div class="log" id="log"></div>
+
+<script>
+/* ===========================
+   COORDINATE PORTI REALI
+   =========================== */
+const PORT_COORDS = {
+  LIVORNO:       { lat: 43.5450, lon: 10.2870 },
+  GENOVA:        { lat: 44.4111, lon: 8.8940 },
+  NAPOLI:        { lat: 40.8401, lon: 14.2521 },
+  SALERNO:       { lat: 40.6680, lon: 14.7740 },
+  CIVITAVECCHIA: { lat: 42.0938, lon: 11.7967 },
+  LA_SPEZIA:     { lat: 44.1035, lon: 9.8440 },
+  TRIESTE:       { lat: 45.6445, lon: 13.7699 }
+};
+
+/* ===========================
+   UTILS
+   =========================== */
+function log(msg) {
+  document.getElementById('log').innerHTML += msg + "<br>";
+}
+
+function toRad(d) {
+  return d * Math.PI / 180;
+}
+
+function haversineKm(a, b) {
+  const R = 6371;
+  const dLat = toRad(b.lat - a.lat);
+  const dLon = toRad(b.lon - a.lon);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) *
+    Math.sin(dLon / 2) ** 2;
+
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+/* ===========================
+   GEOCODING
+   =========================== */
+async function geocodeLocation(place) {
+  const url =
+    "https://nominatim.openstreetmap.org/search" +
+    "?q=" + encodeURIComponent(place) +
+    "&format=json&limit=1";
+
+  const res = await fetch(url, {
+    headers: { "User-Agent": "LogisticsAnalyzer/1.0" }
+  });
+
+  const data = await res.json();
+
+  if (!data.length) {
+    throw new Error("Località non trovata: " + place);
+  }
+
+  return {
+    lat: parseFloat(data[0].lat),
+    lon: parseFloat(data[0].lon)
+  };
+}
+
+/* ===========================
+   CSV PARSER (SEMPLICE)
+   =========================== */
+function parseCSV(text) {
+  const rows = text.split("\n").map(r => r.trim()).filter(r => r);
+  const headers = rows[0].split("\t");
+
+  return rows.slice(1).map(row => {
+    const values = row.split("\t");
+    const obj = {};
+    headers.forEach((h, i) => obj[h.trim()] = values[i]?.trim());
+    return obj;
+  });
+}
+
+/* ===========================
+   CORE ANALYSIS
+   =========================== */
+async function runAnalysis() {
+
+  document.getElementById("output").innerHTML = "";
+  document.getElementById("log").innerHTML = "";
+
+  const file = document.getElementById("csvFile").files[0];
+  const destinationName = document.getElementById("destination").value;
+
+  if (!file || !destinationName) {
+    alert("Carica il CSV e inserisci la destinazione");
+    return;
+  }
+
+  log("📍 Destinazione: " + destinationName);
+
+  const destinationCoords = await geocodeLocation(destinationName);
+  log("Coordinate destinazione: " + JSON.stringify(destinationCoords));
+
+  const text = await file.text();
+  const orders = parseCSV(text);
+
+  const map = {};
+
+  orders.forEach(o => {
+    const porto = o["PORTO"]?.toUpperCase();
+    const forwarder = o["FORWARDER"];
+    const costo = parseFloat(o["€/TON"]?.replace(",", "."));
+
+    if (!porto || !forwarder || isNaN(costo)) return;
+
+    const key = porto + "|" + forwarder;
+
+    if (!map[key]) {
+      map[key] = { porto, forwarder, totale: 0, count: 0 };
+    }
+
+    map[key].totale += costo;
+    map[key].count++;
+  });
+
+  const results = [];
+
+  Object.values(map).forEach(r => {
+    const coords = PORT_COORDS[r.porto];
+
+    if (!coords) {
+      log("⚠️ Porto non mappato: " + r.porto);
+      return;
+    }
+
+    const distanza = haversineKm(destinationCoords, coords);
+    const costoMedio = r.totale / r.count;
+
+    log(`Porto ${r.porto}: ${distanza.toFixed(1)} km | €${costoMedio.toFixed(2)}/ton`);
+
+    results.push({
+      porto: r.porto,
+      forwarder: r.forwarder,
+      distanza,
+      costoMedio,
+      ordini: r.count
+    });
+  });
+
+  results.sort((a, b) =>
+    a.distanza !== b.distanza
+      ? a.distanza - b.distanza
+      : a.costoMedio - b.costoMedio
+  );
+
+  renderTable(results);
+}
+
+/* ===========================
+   OUTPUT TABLE
+   =========================== */
+function renderTable(data) {
+
+  let html = `
+    <table>
+      <tr>
+        <th>#</th>
+        <th>Porto</th>
+        <th>Forwarder</th>
+        <th>Distanza (km)</th>
+        <th>€/ton</th>
+        <th>Ordini</th>
+      </tr>
+  `;
+
+  data.forEach((r, i) => {
+    html += `
+      <tr class="${i === 0 ? 'chosen' : ''}">
+        <td>${i + 1}</td>
+        <td>${r.porto}</td>
+        <td>${r.forwarder}</td>
+        <td>${r.distanza.toFixed(0)}</td>
+        <td>${r.costoMedio.toFixed(2)}</td>
+        <td>${r.ordini}</td>
+      </tr>
+    `;
+  });
+
+  html += "</table>";
+
+  document.getElementById("output").innerHTML = html;
+}
+</script>
+
+</body>
+</html>
