@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>LogiAnalytics Pro - V3.0</title>
+    <title>Logistics Expert - Full Breakdown</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -46,19 +46,26 @@
 
                         const parsed = rows.slice(1).map(row => {
                             const v = row.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || row.split(',');
+                            
+                            // Funzione di pulizia ultra-precisa per i numeri
                             const n = (idx) => {
                                 if (idx === -1 || !v[idx]) return 0;
-                                return parseFloat(v[idx].replace(/"/g, '').replace(',', '.')) || 0;
+                                let raw = v[idx].replace(/"/g, '').replace(/[^\d,.-]/g, '').replace(',', '.');
+                                return parseFloat(raw) || 0;
                             };
                             const s = (idx) => (idx !== -1 && v[idx]) ? v[idx].replace(/"/g, '').trim() : '';
+
+                            // Calcolo analitico di TUTTI i costi fissi della pratica dal CSV
+                            const sumFissi = n(colIdx.freeout) + n(colIdx.do) + n(colIdx.dogana) + 
+                                             n(colIdx.diritto) + n(colIdx.flegt) + n(colIdx.visita) + 
+                                             n(colIdx.soste) + n(colIdx.svincolo);
 
                             return {
                                 modalita: s(colIdx.modalita), porto: s(colIdx.porto), fwd: s(colIdx.fwd),
                                 dest: s(colIdx.dest), tonsRecord: n(colIdx.tons),
-                                inlandRecord: n(colIdx.inland), terminalRecord: n(colIdx.terminal),
-                                fixedSumTotal: n(colIdx.freeout) + n(colIdx.do) + n(colIdx.dogana) + 
-                                               n(colIdx.diritto) + n(colIdx.flegt) + n(colIdx.visita) + 
-                                               n(colIdx.soste) + n(colIdx.svincolo),
+                                inlandRecord: n(colIdx.inland), 
+                                terminalRecord: n(colIdx.terminal),
+                                totalFixedPratica: sumFissi,
                                 ordine: s(colIdx.ordine)
                             };
                         }).filter(r => r.ordine);
@@ -88,8 +95,8 @@
             };
 
             const calculate = async () => {
-                if (!targetDest || !mode || !tonsInput) return alert("Inserisci tutti i dati");
-                const userTons = parseFloat(tonsInput);
+                if (!targetDest || !mode || !tonsInput) return alert("Dati mancanti");
+                const currentTons = parseFloat(tonsInput);
                 setCalculating(true);
                 try {
                     const targetCoords = await getCoords(targetDest);
@@ -114,39 +121,42 @@
                     let options = [];
                     for (const fwd of fwds) {
                         const fwdOrders = portOrders.filter(o => o.fwd === fwd);
+                        const history = fwdOrders.slice(-15);
                         
-                        // LOGICA DI RIPARTIZIONE ANALITICA
-                        let totalFixedAccumulator = 0;
-                        let kmRateAccumulator = 0;
-                        let count = 0;
+                        let totalFixedSum = 0;
+                        let kmRateSum = 0;
+                        let valid = 0;
 
-                        const history = fwdOrders.slice(-10);
                         for (const o of history) {
                             const oc = await getCoords(o.dest);
                             if (oc) {
                                 const d = await getRoadDist(nearestPort.coords, oc);
                                 if (d > 0 && o.tonsRecord > 0) {
-                                    // Somma i fissi della pratica
-                                    totalFixedAccumulator += (o.fixedSumTotal + (mode === 'TRUCK' ? o.terminalRecord : 0));
-                                    // Calcola il costo inland al km riferito alla singola tonnellata
-                                    kmRateAccumulator += (o.inlandRecord / d) / o.tonsRecord;
-                                    count++;
+                                    // Somma TOTALE: Fissi Porto + Ciclo Terminale (se Truck)
+                                    const practicalFissi = o.totalFixedPratica + (mode === 'TRUCK' ? o.terminalRecord : 0);
+                                    totalFixedSum += practicalFissi;
+                                    
+                                    // Costo Inland per Km riferito alla singola tonnellata
+                                    kmRateSum += (o.inlandRecord / d) / o.tonsRecord;
+                                    valid++;
                                 }
                             }
                         }
 
-                        const avgFixedPratica = count > 0 ? totalFixedAccumulator / count : 380;
-                        const avgKmRatePerTon = count > 0 ? kmRateAccumulator / count : 0.085;
+                        // CALCOLO FINALE ANALITICO
+                        const avgFixedPratica = valid > 0 ? totalFixedSum / valid : 450; 
+                        const avgKmRatePerTon = valid > 0 ? kmRateSum / valid : 0.09;
 
-                        // Ricalcolo dinamico sulle tonnellate inserite dall'utente
-                        const fixedPart = avgFixedPratica / userTons;
-                        const inlandPart = avgKmRatePerTon * nearestPort.dist;
+                        // Ripartizione sulle tonnellate richieste dall'utente
+                        const finalFixedPart = avgFixedPratica / currentTons;
+                        const finalInlandPart = avgKmRatePerTon * nearestPort.dist;
 
                         options.push({
                             porto: nearestPort.name, fwd, 
-                            fixedPart, inlandPart, 
-                            unitCost: fixedPart + inlandPart,
-                            dist: nearestPort.dist, isEst: true
+                            fixedPart: finalFixedPart, 
+                            inlandPart: finalInlandPart, 
+                            unitCost: finalFixedPart + finalInlandPart,
+                            dist: nearestPort.dist
                         });
                     }
 
@@ -155,25 +165,25 @@
                 } catch (e) { alert(e.message); } finally { setCalculating(false); }
             };
 
-            if (loading) return <div className="h-screen flex items-center justify-center font-bold text-blue-600 animate-pulse text-xs uppercase tracking-[0.3em]">Sincronizzazione Database...</div>;
+            if (loading) return <div className="h-screen flex items-center justify-center font-bold text-blue-600 animate-pulse text-xs tracking-widest uppercase">Database Sync...</div>;
 
             return (
                 <div className="max-w-md mx-auto min-h-screen pb-10 flex flex-col">
                     <header className="bg-slate-900 p-8 pt-12 rounded-b-[2.5rem] shadow-xl text-white">
-                        <h1 className="text-3xl font-black italic tracking-tighter text-blue-400">LOGI-ANALITYCS</h1>
-                        <p className="text-[10px] font-bold uppercase tracking-widest mt-2 opacity-60">Ripartizione Costi Fissi/Variabili</p>
+                        <h1 className="text-3xl font-black italic tracking-tighter text-blue-400 leading-none">LOGI-ANALITYCS</h1>
+                        <p className="text-[10px] font-bold uppercase tracking-widest mt-2 opacity-60">Full Cost Breakdown v3.2</p>
                     </header>
 
                     <main className="px-6 -mt-8 flex-grow">
                         <div className="bg-white p-7 rounded-[2.5rem] shadow-2xl space-y-4 border border-slate-100">
                             <div>
-                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2">Destinazione</label>
+                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2">Destinazione Consegna</label>
                                 <input type="text" list="dl" value={targetDest} onChange={e=>setTargetDest(e.target.value)} className="w-full mt-1 p-4 bg-slate-50 rounded-2xl border-none outline-none font-bold text-slate-700" placeholder="es. Oppeano" />
                                 <datalist id="dl">{destinations.map(d=><option key={d} value={d}/>)}</datalist>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2">Mezzo</label>
+                                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2">Modalità</label>
                                     <select value={mode} onChange={e=>setMode(e.target.value)} className="w-full mt-1 p-4 bg-slate-50 rounded-2xl border-none font-bold text-slate-700">
                                         <option value="">Scegli...</option>
                                         <option value="CONTAINER">Container</option>
@@ -186,58 +196,55 @@
                                 </div>
                             </div>
                             <button onClick={calculate} disabled={calculating} className="w-full bg-blue-600 text-white p-5 rounded-2xl font-black uppercase tracking-widest active:scale-95 transition-all shadow-lg shadow-blue-100">
-                                {calculating ? "CALCOLO ANALITICO..." : "GENERA PREVENTIVO"}
+                                {calculating ? "ANALISI IN CORSO..." : "CALCOLA PREVENTIVO"}
                             </button>
                         </div>
 
                         {result && (
-                            <div className="mt-8 space-y-4 animate-in fade-in slide-in-from-bottom-6 duration-500">
-                                <div className="bg-white rounded-[2.5rem] p-8 shadow-2xl border border-slate-50">
-                                    <div className="flex justify-between items-start mb-6">
-                                        <div className="text-left">
-                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Porto Suggerito</p>
-                                            <p className="text-2xl font-black text-slate-800 italic uppercase leading-none">{result.porto}</p>
-                                        </div>
-                                        <span className="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest">
-                                            {Math.round(result.dist)} KM
-                                        </span>
+                            <div className="mt-8 bg-white rounded-[2.5rem] p-8 shadow-2xl border border-slate-50 animate-in fade-in slide-in-from-bottom-6 duration-500">
+                                <div className="flex justify-between items-start mb-6">
+                                    <div className="text-left">
+                                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Porto d'Arrivo</p>
+                                        <p className="text-2xl font-black text-slate-800 italic uppercase">{result.porto}</p>
                                     </div>
+                                    <span className="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg text-[10px] font-black">{Math.round(result.dist)} KM</span>
+                                </div>
 
-                                    <div className="space-y-3 mb-8">
-                                        <div className="flex justify-between items-center border-b border-slate-50 pb-2">
-                                            <span className="text-[11px] font-bold text-slate-500 uppercase">Forwarder</span>
-                                            <span className="text-sm font-black text-slate-800">{result.fwd}</span>
+                                <div className="space-y-4 mb-8">
+                                    <div className="flex justify-between items-center border-b border-slate-50 pb-2">
+                                        <span className="text-[11px] font-bold text-slate-400 uppercase">Forwarder</span>
+                                        <span className="text-sm font-black text-slate-800">{result.fwd}</span>
+                                    </div>
+                                    
+                                    <div className="bg-slate-50 p-4 rounded-2xl space-y-2">
+                                        <div className="flex justify-between items-center text-[11px]">
+                                            <span className="font-bold text-slate-500 uppercase italic">Fissi & Sbarco (ripartiti)</span>
+                                            <span className="font-black text-slate-700">€ {result.fixedPart.toFixed(2)} / ton</span>
                                         </div>
-                                        <div className="flex justify-between items-center border-b border-slate-50 pb-2">
-                                            <span className="text-[11px] font-bold text-slate-400">Oneri Fissi (ripartiti)</span>
-                                            <span className="text-sm font-bold text-slate-700">€ {result.fixedPart.toFixed(2)} / ton</span>
-                                        </div>
-                                        <div className="flex justify-between items-center border-b border-slate-50 pb-2">
-                                            <span className="text-[11px] font-bold text-slate-400">Inland (Km-based)</span>
-                                            <span className="text-sm font-bold text-slate-700">€ {result.inlandPart.toFixed(2)} / ton</span>
-                                        </div>
-                                        <div className="flex justify-between items-center pt-2">
-                                            <span className="text-[11px] font-black text-blue-600 uppercase">Tariffa Totale</span>
-                                            <span className="text-lg font-black text-blue-600 italic">€ {result.unitCost.toFixed(2)} / ton</span>
+                                        <div className="flex justify-between items-center text-[11px]">
+                                            <span className="font-bold text-slate-500 uppercase italic">Trasporto Inland (stima km)</span>
+                                            <span className="font-black text-slate-700">€ {result.inlandPart.toFixed(2)} / ton</span>
                                         </div>
                                     </div>
 
-                                    <div className="bg-slate-900 p-6 rounded-[2rem] text-center shadow-inner">
-                                        <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mb-1">Costo Logistico Totale</p>
-                                        <p className="text-5xl font-black text-white tracking-tighter leading-none">
-                                            € {(result.unitCost * tonsInput).toLocaleString('it-IT', {minimumFractionDigits: 2})}
-                                        </p>
-                                        <p className="text-[10px] text-blue-400 font-bold mt-3 uppercase tracking-widest italic">
-                                            Base: {tonsInput} TON a {result.porto}
-                                        </p>
+                                    <div className="flex justify-between items-center pt-2 px-2">
+                                        <span className="text-[12px] font-black text-blue-600 uppercase">Tariffa Totale</span>
+                                        <span className="text-xl font-black text-blue-600 italic">€ {result.unitCost.toFixed(2)} / ton</span>
                                     </div>
+                                </div>
+
+                                <div className="bg-slate-900 p-6 rounded-[2rem] text-center shadow-inner">
+                                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">Costo Logistico Totale</p>
+                                    <p className="text-5xl font-black text-white tracking-tighter">
+                                        € {(result.unitCost * tonsInput).toLocaleString('it-IT', {minimumFractionDigits: 2})}
+                                    </p>
+                                    <p className="text-[10px] text-blue-400 font-bold mt-3 uppercase tracking-widest italic">
+                                        Calcolo su {tonsInput} TON
+                                    </p>
                                 </div>
                             </div>
                         )}
                     </main>
-                    <footer className="p-8 text-center opacity-30 text-slate-500">
-                        <p className="text-[8px] font-bold uppercase tracking-[0.5em]">Analytics Engine v3.0 • Italy</p>
-                    </footer>
                 </div>
             );
         };
