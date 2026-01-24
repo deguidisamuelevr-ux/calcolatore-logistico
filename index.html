@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Logistics Estimator Pro - Stable</title>
+    <title>Logistics Smart Pro</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-slate-50">
+<body class="bg-slate-50 text-slate-900">
     <div id="root"></div>
 
     <script type="text/babel">
@@ -28,44 +28,44 @@
 
             const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR-MthW0ItRfSSthoga_Tvd7w1_OMdDXZylZQhLjG5I0bk1cEGZjqPsFUt6I373L4oFpw156lvbvYHJ/pub?output=csv';
 
-            // Database di emergenza per evitare errori di connessione
+            // Porti comuni (Fallback rapido)
             const portCoordsDB = {
-                'VENEZIA': { lat: 45.4408, lon: 12.3155 },
-                'TRIESTE': { lat: 45.6495, lon: 13.7768 },
-                'GENOVA': { lat: 44.4056, lon: 8.9463 },
                 'LIVORNO': { lat: 43.5485, lon: 10.3106 },
+                'VENEZIA': { lat: 45.4408, lon: 12.3155 },
+                'GENOVA': { lat: 44.4056, lon: 8.9463 },
                 'RAVENNA': { lat: 44.4184, lon: 12.2035 },
                 'LA SPEZIA': { lat: 44.1025, lon: 9.8241 },
-                'NAPOLI': { lat: 40.8518, lon: 14.2681 },
-                'SALERNO': { lat: 40.6824, lon: 14.7681 }
+                'TRIESTE': { lat: 45.6495, lon: 13.7768 }
             };
 
             useEffect(() => {
                 fetch(CSV_URL)
                     .then(res => res.text())
                     .then(text => {
-                        const rows = text.split('\n').filter(row => row.trim() !== '');
-                        const headers = rows[0].split(',').map(h => h.trim());
-                        const parsed = rows.slice(1).map((row, index) => {
+                        const rows = text.split('\n').filter(r => r.trim());
+                        const headers = rows[0].split(',').map(h => h.trim().toUpperCase());
+                        
+                        const parsed = rows.slice(1).map(row => {
                             const values = row.split(',');
-                            let obj = { id: index };
-                            headers.forEach((h, i) => obj[h] = values[i]?.trim());
+                            let obj = {};
+                            headers.forEach((h, i) => {
+                                // Rimuoviamo virgolette e spazi extra dai dati
+                                obj[h] = values[i] ? values[i].replace(/"/g, '').trim() : '';
+                            });
                             return obj;
                         }).filter(r => r.ORDINE && r['€/TON']);
+                        
                         setData(parsed);
                         setDestinations([...new Set(parsed.map(r => r.DESTINAZIONE))].sort());
                         setLoading(false);
-                    }).catch(e => alert("Errore caricamento CSV: " + e.message));
+                    }).catch(e => alert("Errore CSV: " + e.message));
             }, []);
 
             const getCoords = async (city) => {
-                const cleanName = city.toUpperCase().trim();
-                if (portCoordsDB[cleanName]) return portCoordsDB[cleanName];
-                
+                const clean = city.toUpperCase();
+                if (portCoordsDB[clean]) return portCoordsDB[clean];
                 try {
-                    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(city)},Italy&limit=1`, {
-                        headers: { 'User-Agent': 'LogiCalcApp' }
-                    });
+                    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(city)},Italy&limit=1`);
                     const d = await r.json();
                     return d.length > 0 ? { lat: parseFloat(d[0].lat), lon: parseFloat(d[0].lon) } : null;
                 } catch { return null; }
@@ -76,181 +76,138 @@
                     const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${c1.lon},${c1.lat};${c2.lon},${c2.lat}?overview=false`);
                     const d = await r.json();
                     if (d.code === 'Ok') return d.routes[0].distance / 1000;
-                } catch (e) {}
-                
-                // Fallback: Distanza aerea x 1.25 (coefficiente stradale medio)
-                const R = 6371; 
-                const dLat = (c2.lat-c1.lat) * Math.PI/180;
-                const dLon = (c2.lon-c1.lon) * Math.PI/180;
-                const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                          Math.cos(c1.lat*Math.PI/180) * Math.cos(c2.lat*Math.PI/180) * Math.sin(dLon/2) * Math.sin(dLon/2);
-                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-                return (R * c) * 1.25; 
+                } catch {}
+                // Fallback geometrico se OSRM fallisce
+                const R = 6371;
+                const dLat = (c2.lat-c1.lat)*Math.PI/180;
+                const dLon = (c2.lon-c1.lon)*Math.PI/180;
+                const a = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(c1.lat*Math.PI/180)*Math.cos(c2.lat*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);
+                return (R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))) * 1.28;
             };
 
-           const calculate = async () => {
-                if (!targetDest || !mode || !tons) return alert("Inserisci tutti i dati");
+            const calculate = async () => {
+                if (!targetDest || !mode || !tons) return alert("Compila tutti i campi");
                 setCalculating(true);
                 setResult(null);
 
                 try {
                     const targetCoords = await getCoords(targetDest);
-                    if (!targetCoords) throw new Error("Località destinazione non trovata");
+                    if (!targetCoords) throw new Error("Città non trovata");
 
-                    // Filtriamo per modalità (Container/Truck)
-                    const filtered = data.filter(r => 
-                        r["MODALITA'"]?.toUpperCase().trim() === mode.toUpperCase().trim()
-                    );
-                    
-                    if (filtered.length === 0) throw new Error("Nessun dato trovato per questa modalità nel CSV");
+                    // FILTRO TOLLERANTE: confronta senza spazi e tutto in maiuscolo
+                    const filtered = data.filter(r => {
+                        const val = r["MODALITA'"] ? r["MODALITA'"].toUpperCase().trim() : '';
+                        return val === mode.toUpperCase().trim();
+                    });
 
-                    // Identifichiamo i porti unici nel CSV
-                    const uniquePortNames = [...new Set(filtered.map(r => r.PORTO?.trim()).filter(Boolean))];
-                    
-                    let portDistances = [];
-                    for (const portName of uniquePortNames) {
-                        const pCoord = await getCoords(portName); // Cerca nel DB interno o su internet
-                        if (pCoord) {
-                            const dist = await getRoadDist(pCoord, targetCoords);
-                            portDistances.push({ name: portName, dist, coords: pCoord });
+                    if (filtered.length === 0) throw new Error(`Nessun dato per '${mode}'. Controlla che nel CSV la colonna MODALITA' contenga esattamente questo termine.`);
+
+                    const uniquePorts = [...new Set(filtered.map(r => r.PORTO.trim()))];
+                    let portDists = [];
+                    for (const p of uniquePorts) {
+                        const pc = await getCoords(p);
+                        if (pc) {
+                            const d = await getRoadDist(pc, targetCoords);
+                            portDists.push({ name: p, dist: d, coords: pc });
                         }
                     }
 
-                    if (portDistances.length === 0) throw new Error("Non riesco a localizzare i porti indicati nel CSV");
+                    portDists.sort((a,b) => a.dist - b.dist);
+                    const nearestPort = portDists[0];
+                    const portOrders = filtered.filter(r => r.PORTO.trim() === nearestPort.name);
+                    const forwarders = [...new Set(portOrders.map(r => r.FORWARDER))];
 
-                    // 1. TROVA IL PORTO PIÙ VICINO (STRADALMENTE)
-                    portDistances.sort((a, b) => a.dist - b.dist);
-                    const nearestPort = portDistances[0];
-
-                    // 2. PRENDI GLI ORDINI DI QUEL PORTO
-                    const portOrders = filtered.filter(r => r.PORTO?.trim() === nearestPort.name);
-                    const forwardersInPort = [...new Set(portOrders.map(r => r.FORWARDER))];
-                    
-                    let options = [];
-                    for (const fwd of forwardersInPort) {
+                    let finalOptions = [];
+                    for (const fwd of forwarders) {
                         const fwdOrders = portOrders.filter(o => o.FORWARDER === fwd);
-                        let finalCostPerTon = 0;
+                        const exact = fwdOrders.filter(o => o.DESTINAZIONE.toUpperCase().trim() === targetDest.toUpperCase().trim());
                         
-                        const exactMatch = fwdOrders.filter(o => 
-                            o.DESTINAZIONE.toLowerCase().trim() === targetDest.toLowerCase().trim()
-                        );
-
-                        if (exactMatch.length > 0) {
-                            // MEDIA PONDERATA (Pesa di più gli ordini in fondo al CSV)
-                            let weightSum = 0, costSum = 0;
-                            exactMatch.forEach((o, i) => {
-                                const weight = i + 1;
-                                const cost = parseFloat(o["€/TON"].toString().replace(',', '.'));
-                                if(!isNaN(cost)) {
-                                    costSum += (cost * weight);
-                                    weightSum += weight;
-                                }
+                        let cost = 0;
+                        if (exact.length > 0) {
+                            let wSum = 0, cSum = 0;
+                            exact.forEach((o, i) => {
+                                const w = i + 1;
+                                const c = parseFloat(o["€/TON"].replace(',', '.'));
+                                cSum += (c * w); wSum += w;
                             });
-                            finalCostPerTon = costSum / weightSum;
+                            cost = cSum / wSum;
                         } else {
-                            // STIMA PROPORZIONALE SUL PORTO PIÙ VICINO
-                            let kmRates = [];
-                            const sample = fwdOrders.slice(-8); // Prende gli ultimi 8 ordini del forwarder
-                            for (const o of sample) {
-                                const oCoords = await getCoords(o.DESTINAZIONE);
-                                if (oCoords) {
-                                    const d = await getRoadDist(nearestPort.coords, oCoords);
-                                    const c = parseFloat(o["€/TON"].toString().replace(',', '.'));
-                                    if (d > 0 && !isNaN(c)) kmRates.push(c / d);
+                            // Stima proporzionale porto più vicino
+                            let rates = [];
+                            for (const o of fwdOrders.slice(-5)) {
+                                const oc = await getCoords(o.DESTINAZIONE);
+                                if (oc) {
+                                    const d = await getRoadDist(nearestPort.coords, oc);
+                                    const c = parseFloat(o["€/TON"].replace(',', '.'));
+                                    if (d > 0) rates.push(c / d);
                                 }
                             }
-                            const avgKmRate = kmRates.length > 0 ? kmRates.reduce((a,b)=>a+b,0)/kmRates.length : 1.5;
-                            finalCostPerTon = avgKmRate * nearestPort.dist;
+                            cost = (rates.length > 0 ? rates.reduce((a,b)=>a+b,0)/rates.length : 1.3) * nearestPort.dist;
                         }
-                        
-                        if(finalCostPerTon > 0) {
-                            options.push({
-                                porto: nearestPort.name,
-                                forwarder: fwd,
-                                costPerTon: finalCostPerTon,
-                                distance: nearestPort.dist,
-                                isEstimated: exactMatch.length === 0
-                            });
-                        }
+                        finalOptions.push({ porto: nearestPort.name, fwd, cost, dist: nearestPort.dist, isEst: exact.length === 0 });
                     }
 
-                    if (options.length === 0) throw new Error("Impossibile calcolare costi per i fornitori di questo porto");
-
-                    options.sort((a, b) => a.costPerTon - b.costPerTon);
-                    setResult(options[0]);
+                    finalOptions.sort((a,b) => a.cost - b.cost);
+                    setResult(finalOptions[0]);
 
                 } catch (e) {
-                    alert("Attenzione: " + e.message);
+                    alert(e.message);
                 } finally {
                     setCalculating(false);
                 }
             };
 
-            if (loading) return <div className="h-screen flex items-center justify-center text-blue-600 font-bold">Caricamento DB...</div>;
+            if (loading) return <div className="h-screen flex items-center justify-center font-bold text-blue-600">Syncing with Google Sheets...</div>;
 
             return (
-                <div className="max-w-md mx-auto min-h-screen bg-white">
-                    <header className="bg-gradient-to-r from-blue-700 to-blue-500 p-8 text-white rounded-b-[3rem] shadow-lg">
-                        <h1 className="text-3xl font-black tracking-tighter italic">LOGI-SMART</h1>
-                        <p className="text-blue-100 text-xs mt-1 font-bold">V1.2 - Ottimizzato Porto Vicino</p>
-                    </header>
+                <div className="max-w-md mx-auto min-h-screen pb-10">
+                    <div className="bg-blue-700 p-8 rounded-b-[3rem] shadow-lg text-white">
+                        <h1 className="text-3xl font-black italic tracking-tighter">LOGI-FLOW</h1>
+                        <p className="text-blue-200 text-xs mt-1 uppercase font-bold tracking-widest">Mobile Estimator</p>
+                    </div>
 
-                    <main className="p-6 -mt-10">
-                        <div className="bg-white rounded-[2.5rem] p-8 shadow-2xl border border-gray-50">
-                            <div className="space-y-6">
-                                <div>
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Destinazione</label>
-                                    <input type="text" list="dests" value={targetDest} onChange={e=>setTargetDest(e.target.value)} 
-                                        className="w-full mt-1 p-5 bg-slate-50 rounded-2xl border-none font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none" 
-                                        placeholder="Città" />
-                                    <datalist id="dests">{destinations.map(d=><option key={d} value={d}/>)}</datalist>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Mezzo</label>
-                                        <select value={mode} onChange={e=>setMode(e.target.value)} className="w-full mt-1 p-5 bg-slate-50 rounded-2xl border-none font-bold text-slate-800 appearance-none outline-none">
-                                            <option value="">Tipo...</option>
-                                            <option value="CONTAINER">Container</option>
-                                            <option value="TRUCK">Camion</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Ton</label>
-                                        <input type="number" value={tons} onChange={e=>setTons(e.target.value)} className="w-full mt-1 p-5 bg-slate-50 rounded-2xl border-none font-bold text-slate-800 outline-none" placeholder="25" />
-                                    </div>
-                                </div>
-
-                                <button onClick={calculate} disabled={calculating} className="w-full bg-blue-600 text-white p-6 rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-blue-200 active:scale-95 transition-all">
-                                    {calculating ? "Analisi Geografica..." : "Calcola Stima"}
-                                </button>
+                    <div className="px-6 -mt-8">
+                        <div className="bg-white p-6 rounded-3xl shadow-xl space-y-4">
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-400 uppercase ml-2">Destinazione</label>
+                                <input type="text" list="dl" value={targetDest} onChange={e=>setTargetDest(e.target.value)} className="w-full mt-1 p-4 bg-slate-50 rounded-2xl border-none outline-none font-bold" placeholder="Città" />
+                                <datalist id="dl">{destinations.map(d=><option key={d} value={d}/>)}</datalist>
                             </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-2">Mezzo</label>
+                                    <select value={mode} onChange={e=>setMode(e.target.value)} className="w-full mt-1 p-4 bg-slate-50 rounded-2xl border-none outline-none font-bold">
+                                        <option value="">Tipo...</option>
+                                        <option value="CONTAINER">Container</option>
+                                        <option value="TRUCK">Camion</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-2">Ton</label>
+                                    <input type="number" value={tons} onChange={e=>setTons(e.target.value)} className="w-full mt-1 p-4 bg-slate-50 rounded-2xl border-none outline-none font-bold" placeholder="25" />
+                                </div>
+                            </div>
+                            <button onClick={calculate} disabled={calculating} className="w-full bg-blue-600 text-white p-5 rounded-2xl font-black shadow-lg active:scale-95 transition-all">
+                                {calculating ? "CALCOLO IN CORSO..." : "CALCOLA STIMA"}
+                            </button>
                         </div>
 
                         {result && (
-                            <div className="mt-8 animate-in fade-in slide-in-from-bottom-6">
-                                <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden">
-                                    <div className="flex justify-between items-start relative z-10">
-                                        <div className="bg-blue-600 px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest">
-                                            {result.isEstimated ? "Stima Proporzionale" : "Dato Storico"}
-                                        </div>
-                                    </div>
-
-                                    <div className="mt-8 relative z-10">
-                                        <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">Porto più vicino</p>
-                                        <p className="text-3xl font-black text-blue-400 italic uppercase">{result.porto}</p>
-                                        <p className="text-sm text-slate-300 mt-1">{result.forwarder} • {Math.round(result.distance)} KM</p>
-                                    </div>
-
-                                    <div className="mt-8 pt-8 border-t border-white/10 relative z-10 text-center">
-                                        <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">Costo Totale Stimato</p>
-                                        <p className="text-5xl font-black mt-2">€ {(result.costPerTon * tons).toLocaleString('it-IT', {minimumFractionDigits: 2})}</p>
-                                        <p className="text-blue-400 text-xs font-bold mt-3 italic uppercase">€ {result.costPerTon.toFixed(2)} / Ton</p>
-                                    </div>
+                            <div className="mt-6 bg-slate-900 rounded-3xl p-6 text-white shadow-2xl animate-in fade-in slide-in-from-bottom-4">
+                                <div className="flex justify-between items-start mb-4">
+                                    <span className="bg-blue-600 px-3 py-1 rounded-lg text-[10px] font-black uppercase">{result.isEst ? "Nuova Rotta" : "Dato Storico"}</span>
+                                    <span className="text-blue-400 font-bold text-xs uppercase">{result.porto}</span>
+                                </div>
+                                <p className="text-xs text-slate-400 uppercase font-bold">Forwarder</p>
+                                <p className="text-xl font-bold mb-4">{result.fwd}</p>
+                                <div className="bg-white/5 p-4 rounded-2xl">
+                                    <p className="text-[10px] text-slate-400 uppercase font-bold">Costo Totale Stimato</p>
+                                    <p className="text-4xl font-black">€ {(result.cost * tons).toLocaleString('it-IT', {minimumFractionDigits: 2})}</p>
+                                    <p className="text-blue-400 text-[10px] mt-1 font-bold">BASATO SU € {result.cost.toFixed(2)} / TON • {Math.round(result.dist)} KM</p>
                                 </div>
                             </div>
                         )}
-                    </main>
+                    </div>
                 </div>
             );
         };
