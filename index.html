@@ -87,8 +87,9 @@
                 } catch { return null; }
             };
 
-            const calculate = async () => {
+           const calculate = async () => {
                 if (!targetDest || !mode || !tonsInput) return alert("Inserisci tutti i dati");
+                const currentTons = parseFloat(tonsInput);
                 setCalculating(true);
                 try {
                     const targetCoords = await getCoords(targetDest);
@@ -114,45 +115,41 @@
                     let options = [];
                     for (const fwd of fwds) {
                         const fwdOrders = portOrders.filter(o => o.fwd === fwd);
-                        const exact = fwdOrders.filter(o => o.dest.toUpperCase() === targetDest.toUpperCase());
                         
-                        let fixedPart = 0;
-                        let inlandPart = 0;
+                        // ESTRAZIONE MEDIE REALI PER SPEDIZIONE
+                        let totalFixedAccumulator = 0;
+                        let kmRateAccumulator = 0;
+                        let count = 0;
 
-                        if (exact.length > 0) {
-                            // Media ponderata esatta
-                            let wSum = 0, fSum = 0, iSum = 0;
-                            exact.forEach((o, i) => {
-                                const w = i + 1;
-                                fSum += ((o.fixedSum + (mode==='TRUCK' ? o.terminal : 0)) / o.tons) * w;
-                                iSum += (o.inland / o.tons) * w;
-                                wSum += w;
-                            });
-                            fixedPart = fSum / wSum;
-                            inlandPart = iSum / wSum;
-                        } else {
-                            // Stima proporzionale
-                            let kmRates = [];
-                            let fixRates = [];
-                            for (const o of fwdOrders.slice(-8)) {
-                                const oc = await getCoords(o.dest);
-                                if (oc) {
-                                    const d = await getRoadDist(nearestPort.coords, oc);
-                                    if (d > 0 && o.tons > 0) {
-                                        kmRates.push((o.inland / d) / o.tons);
-                                        fixRates.push((o.fixedSum + (mode==='TRUCK' ? o.terminal : 0)) / o.tons);
-                                    }
+                        const history = fwdOrders.slice(-10);
+                        for (const o of history) {
+                            const oc = await getCoords(o.dest);
+                            if (oc) {
+                                const d = await getRoadDist(nearestPort.coords, oc);
+                                if (d > 0) {
+                                    // Costo Fisso Totale della pratica (NON al ton)
+                                    const fixedTotal = o.fixedSum + (mode==='TRUCK' ? o.terminal : 0);
+                                    totalFixedAccumulator += fixedTotal;
+                                    
+                                    // Costo Inland al KM (per tonnellata)
+                                    kmRateAccumulator += (o.inland / d) / o.tons;
+                                    count++;
                                 }
                             }
-                            fixedPart = fixRates.length > 0 ? fixRates.reduce((a,b)=>a+b,0)/fixRates.length : 15;
-                            inlandPart = (kmRates.length > 0 ? kmRates.reduce((a,b)=>a+b,0)/kmRates.length : 0.08) * nearestPort.dist;
                         }
+
+                        // CALCOLO FINALE PROPORZIONALE SULLE TONNELLATE INSERITE DALL'UTENTE
+                        const avgFixedTotal = count > 0 ? totalFixedAccumulator / count : 350; // Default 350€ a pratica
+                        const avgKmRatePerTon = count > 0 ? kmRateAccumulator / count : 0.08;
+
+                        const fixedPart = avgFixedTotal / currentTons; // Qui spalmiamo i costi fissi sulle ton reali
+                        const inlandPart = avgKmRatePerTon * nearestPort.dist;
 
                         options.push({
                             porto: nearestPort.name, fwd, 
                             fixedPart, inlandPart, 
                             unitCost: fixedPart + inlandPart,
-                            dist: nearestPort.dist, isEst: exact.length === 0
+                            dist: nearestPort.dist, isEst: true
                         });
                     }
 
