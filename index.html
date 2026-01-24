@@ -232,25 +232,82 @@
                 return;
               }
               
+              // Raggruppa per porto+forwarder
               const combinations = {};
               ordersToUse.forEach(order => {
                 const key = `${order.PORTO}|${order.FORWARDER}`;
                 if (!combinations[key]) {
-                  combinations[key] = { porto: order.PORTO, forwarder: order.FORWARDER, costs: [] };
+                  combinations[key] = { 
+                    porto: order.PORTO, 
+                    forwarder: order.FORWARDER, 
+                    costs: [],
+                    destinations: []
+                  };
                 }
                 combinations[key].costs.push(parseFloat(order['€/TON']));
+                if (!combinations[key].destinations.includes(order.DESTINAZIONE)) {
+                  combinations[key].destinations.push(order.DESTINAZIONE);
+                }
               });
               
+              // Se è una stima, calcola distanza dei porti dalla destinazione target
               let bestOption = null;
               let lowestCost = Infinity;
               
-              Object.values(combinations).forEach(combo => {
-                const avgCost = combo.costs.reduce((a, b) => a + b, 0) / combo.costs.length;
-                if (avgCost < lowestCost) {
-                  lowestCost = avgCost;
-                  bestOption = { ...combo, avgCost, numOrders: combo.costs.length };
+              if (isEstimated) {
+                const targetCoords = await getCoordinates(destinazione);
+                const portCoords = {
+                  'VENEZIA': { lat: 45.4408, lon: 12.3155 },
+                  'TRIESTE': { lat: 45.6495, lon: 13.7768 },
+                  'GENOVA': { lat: 44.4056, lon: 8.9463 },
+                  'LIVORNO': { lat: 43.5485, lon: 10.3106 },
+                  'RAVENNA': { lat: 44.4184, lon: 12.2035 },
+                  'NAPOLI': { lat: 40.8518, lon: 14.2681 },
+                  'SALERNO': { lat: 40.6824, lon: 14.7681 },
+                  'CIVITAVECCHIA': { lat: 42.0938, lon: 11.7967 }
+                };
+                
+                // Per ogni combinazione, calcola distanza del porto
+                const combosWithDistance = [];
+                for (const combo of Object.values(combinations)) {
+                  const avgCost = combo.costs.reduce((a, b) => a + b, 0) / combo.costs.length;
+                  const portCoord = portCoords[combo.porto.toUpperCase()];
+                  
+                  if (portCoord && targetCoords) {
+                    const distance = calculateDistance(targetCoords, portCoord);
+                    combosWithDistance.push({
+                      ...combo,
+                      avgCost,
+                      numOrders: combo.costs.length,
+                      portDistance: distance
+                    });
+                  }
                 }
-              });
+                
+                // Ordina per distanza porto, poi per costo
+                combosWithDistance.sort((a, b) => {
+                  // Prima criterio: distanza porto (peso maggiore)
+                  const distDiff = a.portDistance - b.portDistance;
+                  if (Math.abs(distDiff) > 100) return distDiff; // Se differenza >100km, conta molto
+                  // Secondo criterio: costo
+                  return a.avgCost - b.avgCost;
+                });
+                
+                if (combosWithDistance.length > 0) {
+                  bestOption = combosWithDistance[0];
+                  console.log('Porto scelto:', bestOption.porto, 'distanza:', bestOption.portDistance.toFixed(0), 'km');
+                }
+                
+              } else {
+                // Match esatto: scegli solo per costo
+                Object.values(combinations).forEach(combo => {
+                  const avgCost = combo.costs.reduce((a, b) => a + b, 0) / combo.costs.length;
+                  if (avgCost < lowestCost) {
+                    lowestCost = avgCost;
+                    bestOption = { ...combo, avgCost, numOrders: combo.costs.length };
+                  }
+                });
+              }
               
               const ton = parseFloat(tonnellate);
               
