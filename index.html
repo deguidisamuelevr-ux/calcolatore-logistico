@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Logistics Expert - Analisi di Mercato v4.0</title>
+    <title>Logistics Expert - Precision v4.2</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -53,6 +53,7 @@
                             };
                             const s = (idx) => (idx !== -1 && v[idx]) ? v[idx].replace(/"/g, '').trim() : '';
 
+                            // Somma rigorosa solo delle voci FISSE (escluso Inland)
                             const sumFissi = n(colIdx.freeout) + n(colIdx.do) + n(colIdx.dogana) + 
                                              n(colIdx.diritto) + n(colIdx.flegt) + n(colIdx.visita) + 
                                              n(colIdx.soste) + n(colIdx.svincolo);
@@ -92,7 +93,7 @@
             };
 
             const calculate = async () => {
-                if (!targetDest || !mode || !tonsInput) return alert("Inserire tutti i dati");
+                if (!targetDest || !mode || !tonsInput) return alert("Inserire dati");
                 const userTons = parseFloat(tonsInput);
                 setCalculating(true);
                 try {
@@ -118,7 +119,7 @@
                     let options = [];
                     for (const fwd of fwds) {
                         const fwdOrders = portOrders.filter(o => o.fwd === fwd);
-                        const history = fwdOrders.slice(-15);
+                        const history = fwdOrders.slice(-10);
                         
                         let totalFixedSum = 0;
                         let kmRateFullTruckSum = 0;
@@ -128,27 +129,21 @@
                             const oc = await getCoords(o.dest);
                             if (oc) {
                                 const d = await getRoadDist(nearestPort.coords, oc);
-                                // Filtriamo per avere distanze e tonnellate realistiche nel calcolo della media
-                                if (d > 20 && o.tonsRecord > 0) {
+                                if (d > 10 && o.tonsRecord > 0) {
+                                    // Costo fisso REALE della pratica (inclusi terminal se Truck)
                                     const practicalFissi = o.totalFixedPratica + (mode === 'TRUCK' ? o.terminalRecord : 0);
                                     totalFixedSum += practicalFissi;
                                     
-                                    // Costo del viaggio intero diviso per i km
+                                    // Costo al KM per l'intero viaggio
                                     kmRateFullTruckSum += (o.inlandRecord / d);
                                     valid++;
                                 }
                             }
                         }
 
-                        // Medie storiche conservative
-                        let avgFixedPratica = valid > 0 ? totalFixedSum / valid : 400; 
-                        let avgKmRateFullTruck = valid > 0 ? kmRateFullTruckSum / valid : 1.70;
+                        const avgFixedPratica = valid > 0 ? totalFixedSum / valid : 700; 
+                        const avgKmRateFullTruck = valid > 0 ? kmRateFullTruckSum / valid : 1.85;
 
-                        // Calmiamo il costo km se il CSV ha dati anomali (Mercato Italia 1.40 - 2.20 €/km)
-                        if (avgKmRateFullTruck > 2.6) avgKmRateFullTruck = 2.15;
-                        if (avgKmRateFullTruck < 0.9) avgKmRateFullTruck = 1.45;
-
-                        // Ripartizione finale
                         const finalFixedPart = avgFixedPratica / userTons;
                         const finalInlandPart = (avgKmRateFullTruck * nearestPort.dist) / userTons;
 
@@ -157,7 +152,8 @@
                             fixedPart: finalFixedPart, 
                             inlandPart: finalInlandPart, 
                             unitCost: finalFixedPart + finalInlandPart,
-                            dist: nearestPort.dist
+                            dist: nearestPort.dist,
+                            rawFixed: avgFixedPratica // Per il debug
                         });
                     }
 
@@ -166,86 +162,70 @@
                 } catch (e) { alert(e.message); } finally { setCalculating(false); }
             };
 
-            if (loading) return <div className="h-screen flex items-center justify-center font-bold text-blue-600 animate-pulse uppercase tracking-[0.2em]">Sincronizzazione Dati...</div>;
+            if (loading) return <div className="h-screen flex items-center justify-center font-bold text-blue-600 animate-pulse">CARICAMENTO...</div>;
 
             return (
                 <div className="max-w-md mx-auto min-h-screen pb-10 flex flex-col">
                     <header className="bg-slate-900 p-8 pt-12 rounded-b-[2.5rem] shadow-xl text-white">
                         <h1 className="text-3xl font-black italic tracking-tighter text-blue-400">LOGI-ANALITYCS</h1>
-                        <p className="text-[10px] font-bold uppercase tracking-widest mt-2 opacity-60 italic">Algoritmo Full-Truck v4.0</p>
+                        <p className="text-[10px] font-bold uppercase tracking-widest mt-2 opacity-60">Precision Logic v4.2</p>
                     </header>
 
                     <main className="px-6 -mt-8 flex-grow">
                         <div className="bg-white p-7 rounded-[2.5rem] shadow-2xl space-y-4 border border-slate-100">
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2">Destinazione</label>
-                                    <input type="text" list="dl" value={targetDest} onChange={e=>setTargetDest(e.target.value)} className="w-full mt-1 p-4 bg-slate-50 rounded-2xl border-none outline-none font-bold text-slate-700" placeholder="es. Oppeano" />
-                                    <datalist id="dl">{destinations.map(d=><option key={d} value={d}/>)}</datalist>
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2">Mezzo</label>
-                                        <select value={mode} onChange={e=>setMode(e.target.value)} className="w-full mt-1 p-4 bg-slate-50 rounded-2xl border-none font-bold text-slate-700">
-                                            <option value="">Scegli...</option>
-                                            <option value="CONTAINER">Container</option>
-                                            <option value="TRUCK">Truck</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2">Tonnellate</label>
-                                        <input type="number" value={tonsInput} onChange={e=>setTonsInput(e.target.value)} className="w-full mt-1 p-4 bg-slate-50 rounded-2xl border-none font-bold text-slate-700" placeholder="25" />
-                                    </div>
-                                </div>
-                                <button onClick={calculate} disabled={calculating} className="w-full bg-blue-600 text-white p-5 rounded-2xl font-black uppercase tracking-widest active:scale-95 transition-all shadow-lg shadow-blue-100">
-                                    {calculating ? "CALCOLO IN CORSO..." : "CALCOLA PREVENTIVO"}
-                                </button>
+                            <input type="text" list="dl" value={targetDest} onChange={e=>setTargetDest(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl border-none outline-none font-bold text-slate-700" placeholder="Destinazione" />
+                            <datalist id="dl">{destinations.map(d=><option key={d} value={d}/>)}</datalist>
+                            <div className="grid grid-cols-2 gap-4">
+                                <select value={mode} onChange={e=>setMode(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl border-none font-bold text-slate-700">
+                                    <option value="">Modalità</option>
+                                    <option value="CONTAINER">Container</option>
+                                    <option value="TRUCK">Truck</option>
+                                </select>
+                                <input type="number" value={tonsInput} onChange={e=>setTonsInput(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl border-none font-bold text-slate-700" placeholder="Ton." />
                             </div>
+                            <button onClick={calculate} disabled={calculating} className="w-full bg-blue-600 text-white p-5 rounded-2xl font-black uppercase tracking-widest active:scale-95 transition-all">
+                                {calculating ? "CALCOLO..." : "PREVENTIVO PRECISIO"}
+                            </button>
                         </div>
 
                         {result && (
-                            <div className="mt-8 bg-white rounded-[2.5rem] p-8 shadow-2xl border border-slate-50 animate-in fade-in slide-in-from-bottom-6 duration-500">
+                            <div className="mt-8 bg-white rounded-[2.5rem] p-8 shadow-2xl animate-in fade-in slide-in-from-bottom-6">
                                 <div className="flex justify-between items-center mb-6">
-                                    <p className="text-2xl font-black text-slate-800 italic uppercase leading-none">{result.porto}</p>
-                                    <div className="bg-blue-600 text-white px-3 py-1 rounded-lg text-[10px] font-black tracking-tighter">
-                                        {Math.round(result.dist)} KM
-                                    </div>
+                                    <p className="text-2xl font-black text-slate-800 italic uppercase">{result.porto}</p>
+                                    <div className="bg-blue-600 text-white px-3 py-1 rounded-lg text-[10px] font-black">{Math.round(result.dist)} KM</div>
                                 </div>
 
-                                <div className="space-y-3 mb-8">
+                                <div className="space-y-3 mb-6">
                                     <div className="flex justify-between items-center border-b border-slate-50 pb-2">
                                         <span className="text-[10px] font-bold text-slate-400 uppercase">Forwarder</span>
                                         <span className="text-sm font-black text-slate-800">{result.fwd}</span>
                                     </div>
-                                    
-                                    <div className="grid grid-cols-1 gap-2">
-                                        <div className="flex justify-between items-center bg-slate-50 p-3 rounded-xl">
-                                            <span className="text-[10px] font-bold text-slate-500 uppercase italic leading-none">Oneri Fissi Portuali</span>
-                                            <span className="text-sm font-black text-slate-700">€ {result.fixedPart.toFixed(2)}/ton</span>
-                                        </div>
-                                        <div className="flex justify-between items-center bg-slate-50 p-3 rounded-xl">
-                                            <span className="text-[10px] font-bold text-slate-500 uppercase italic leading-none">Trasporto Inland</span>
-                                            <span className="text-sm font-black text-slate-700">€ {result.inlandPart.toFixed(2)}/ton</span>
-                                        </div>
+                                    <div className="flex justify-between items-center bg-slate-50 p-3 rounded-xl">
+                                        <span className="text-[10px] font-bold text-slate-500 uppercase italic">Oneri Fissi Portuali</span>
+                                        <span className="text-sm font-black text-slate-700">€ {result.fixedPart.toFixed(2)}/ton</span>
+                                    </div>
+                                    <div className="flex justify-between items-center bg-slate-50 p-3 rounded-xl">
+                                        <span className="text-[10px] font-bold text-slate-500 uppercase italic">Trasporto Inland</span>
+                                        <span className="text-sm font-black text-slate-700">€ {result.inlandPart.toFixed(2)}/ton</span>
                                     </div>
                                 </div>
 
-                                <div className="bg-slate-900 p-6 rounded-[2rem] text-center shadow-inner overflow-hidden">
+                                <div className="bg-slate-900 p-6 rounded-[2rem] text-center shadow-inner mb-4">
                                     <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">Costo Totale Stimato</p>
                                     <p className="text-5xl font-black text-white tracking-tighter">
                                         € {(result.unitCost * tonsInput).toLocaleString('it-IT', {minimumFractionDigits: 2})}
                                     </p>
-                                    <div className="mt-4 flex justify-between border-t border-white/5 pt-4">
-                                        <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest">€ {result.unitCost.toFixed(2)} / ton</span>
-                                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Base {tonsInput} TON</span>
-                                    </div>
+                                    <p className="text-[10px] text-blue-400 font-black mt-3 uppercase tracking-widest">€ {result.unitCost.toFixed(2)} / ton</p>
+                                </div>
+                                
+                                <div className="border-t border-dashed border-slate-200 pt-4 px-2">
+                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Log di Verifica Dati:</p>
+                                    <p className="text-[10px] text-slate-500">Somma Fissi Pratica (Media): <b>€ {result.rawFixed.toFixed(2)}</b></p>
+                                    <p className="text-[10px] text-slate-500">Ripartizione su {tonsInput} TON: <b>€ {(result.rawFixed / tonsInput).toFixed(2)}/ton</b></p>
                                 </div>
                             </div>
                         )}
                     </main>
-                    <footer className="p-8 text-center text-slate-400">
-                        <p className="text-[8px] font-bold uppercase tracking-[0.4em]">Logistics Intelligence System • 2026</p>
-                    </footer>
                 </div>
             );
         };
