@@ -36,17 +36,6 @@
 
           const GOOGLE_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR-MthW0ItRfSSthoga_Tvd7w1_OMdDXZylZQhLjG5I0bk1cEGZjqPsFUt6I373L4oFpw156lvbvYHJ/pub?output=csv';
 
-          const italianCities = {
-            'milano': { lat: 45.4642, lon: 9.1900 },
-            'roma': { lat: 41.9028, lon: 12.4964 },
-            'napoli': { lat: 40.8518, lon: 14.2681 },
-            'verona': { lat: 45.4384, lon: 10.9916 },
-            'brescia': { lat: 45.5416, lon: 10.2118 },
-            'oppeano': { lat: 45.3167, lon: 11.1000 },
-            'adro': { lat: 45.6167, lon: 9.9667 },
-            'salerno': { lat: 40.6824, lon: 14.7681 }
-          };
-
           useEffect(() => {
             loadData();
           }, []);
@@ -137,7 +126,31 @@
           const getCoordinates = async (address) => {
             const normalized = address.toLowerCase().trim();
             
-            for (const [city, coords] of Object.entries(italianCities)) {
+            // Database locale con coordinate precise
+            const cities = {
+              'milano': { lat: 45.4642, lon: 9.19 },
+              'roma': { lat: 41.9028, lon: 12.4964 },
+              'napoli': { lat: 40.8518, lon: 14.2681 },
+              'verona': { lat: 45.4384, lon: 10.9916 },
+              'brescia': { lat: 45.5416, lon: 10.2118 },
+              'oppeano': { lat: 45.316722, lon: 11.099167 }, // Coordinate precise corrette
+              'adro': { lat: 45.6167, lon: 9.9667 },
+              'salerno': { lat: 40.6824, lon: 14.7681 },
+              'bergamo': { lat: 45.6983, lon: 9.6773 },
+              'mantova': { lat: 45.1564, lon: 10.7914 },
+              'cremona': { lat: 45.1333, lon: 10.0167 },
+              'pavia': { lat: 45.1847, lon: 9.1582 },
+              'torino': { lat: 45.0703, lon: 7.6869 },
+              'genova': { lat: 44.4056, lon: 8.9463 },
+              'bologna': { lat: 44.4949, lon: 11.3426 },
+              'firenze': { lat: 43.7696, lon: 11.2558 },
+              'venezia': { lat: 45.4408, lon: 12.3155 },
+              'padova': { lat: 45.4064, lon: 11.8768 },
+              'vicenza': { lat: 45.5455, lon: 11.5354 },
+              'treviso': { lat: 45.6669, lon: 12.243 }
+            };
+            
+            for (const [city, coords] of Object.entries(cities)) {
               if (normalized.includes(city)) {
                 return coords;
               }
@@ -151,7 +164,12 @@
               );
               const data = await response.json();
               if (data && data.length > 0) {
-                return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
+                // Mantieni precisione usando Number() invece di parseFloat()
+                // e arrotonda a 6 decimali (sufficiente per ~11cm di precisione)
+                const lat = Number(Number(data[0].lat).toFixed(6));
+                const lon = Number(Number(data[0].lon).toFixed(6));
+                console.log(`Geocoded "${address}":`, { lat, lon });
+                return { lat, lon };
               }
             } catch (error) {
               console.error('Geocoding error:', error);
