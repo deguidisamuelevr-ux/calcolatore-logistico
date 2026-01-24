@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Logistics Estimator - Porto Vicino</title>
+    <title>Logistics Estimator Pro - Stable</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -28,6 +28,18 @@
 
             const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR-MthW0ItRfSSthoga_Tvd7w1_OMdDXZylZQhLjG5I0bk1cEGZjqPsFUt6I373L4oFpw156lvbvYHJ/pub?output=csv';
 
+            // Database di emergenza per evitare errori di connessione
+            const portCoordsDB = {
+                'VENEZIA': { lat: 45.4408, lon: 12.3155 },
+                'TRIESTE': { lat: 45.6495, lon: 13.7768 },
+                'GENOVA': { lat: 44.4056, lon: 8.9463 },
+                'LIVORNO': { lat: 43.5485, lon: 10.3106 },
+                'RAVENNA': { lat: 44.4184, lon: 12.2035 },
+                'LA SPEZIA': { lat: 44.1025, lon: 9.8241 },
+                'NAPOLI': { lat: 40.8518, lon: 14.2681 },
+                'SALERNO': { lat: 40.6824, lon: 14.7681 }
+            };
+
             useEffect(() => {
                 fetch(CSV_URL)
                     .then(res => res.text())
@@ -40,16 +52,20 @@
                             headers.forEach((h, i) => obj[h] = values[i]?.trim());
                             return obj;
                         }).filter(r => r.ORDINE && r['€/TON']);
-                        
                         setData(parsed);
                         setDestinations([...new Set(parsed.map(r => r.DESTINAZIONE))].sort());
                         setLoading(false);
-                    });
+                    }).catch(e => alert("Errore caricamento CSV: " + e.message));
             }, []);
 
             const getCoords = async (city) => {
+                const cleanName = city.toUpperCase().trim();
+                if (portCoordsDB[cleanName]) return portCoordsDB[cleanName];
+                
                 try {
-                    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(city)},Italy&limit=1`);
+                    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(city)},Italy&limit=1`, {
+                        headers: { 'User-Agent': 'LogiCalcApp' }
+                    });
                     const d = await r.json();
                     return d.length > 0 ? { lat: parseFloat(d[0].lat), lon: parseFloat(d[0].lon) } : null;
                 } catch { return null; }
@@ -59,8 +75,17 @@
                 try {
                     const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${c1.lon},${c1.lat};${c2.lon},${c2.lat}?overview=false`);
                     const d = await r.json();
-                    return d.code === 'Ok' ? d.routes[0].distance / 1000 : null;
-                } catch { return null; }
+                    if (d.code === 'Ok') return d.routes[0].distance / 1000;
+                } catch (e) {}
+                
+                // Fallback: Distanza aerea x 1.25 (coefficiente stradale medio)
+                const R = 6371; 
+                const dLat = (c2.lat-c1.lat) * Math.PI/180;
+                const dLon = (c2.lon-c1.lon) * Math.PI/180;
+                const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                          Math.cos(c1.lat*Math.PI/180) * Math.cos(c2.lat*Math.PI/180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                return (R * c) * 1.25; 
             };
 
             const calculate = async () => {
@@ -73,53 +98,44 @@
                     if (!targetCoords) throw new Error("Località non trovata");
 
                     const filtered = data.filter(r => r["MODALITA'"] === mode);
-                    const isExactMatch = filtered.some(r => r.DESTINAZIONE.toLowerCase() === targetDest.toLowerCase());
-                    
-                    // Raggruppa per porto per trovare il più vicino
                     const portsInData = [...new Set(filtered.map(r => r.PORTO))];
+                    
                     let portDistances = [];
-
                     for (const portName of portsInData) {
                         const pCoord = await getCoords(portName);
                         if (pCoord) {
                             const dist = await getRoadDist(pCoord, targetCoords);
-                            if (dist) portDistances.push({ name: portName, dist, coords: pCoord });
+                            portDistances.push({ name: portName, dist, coords: pCoord });
                         }
                     }
 
-                    // Ordina i porti per distanza stradale
                     portDistances.sort((a, b) => a.dist - b.dist);
-                    
-                    if (portDistances.length === 0) throw new Error("Impossibile calcolare distanze dai porti");
+                    if (portDistances.length === 0) throw new Error("Porti non configurati nel CSV");
 
-                    const nearestPort = portDistances[0]; // IL PORTO PIÙ VICINO
+                    const nearestPort = portDistances[0];
                     const portOrders = filtered.filter(r => r.PORTO === nearestPort.name);
-
-                    // Calcolo dei costi per i forwarder del porto più vicino
                     const forwardersInPort = [...new Set(portOrders.map(r => r.FORWARDER))];
+                    
                     let options = [];
-
                     for (const fwd of forwardersInPort) {
                         const fwdOrders = portOrders.filter(o => o.FORWARDER === fwd);
                         let finalCostPerTon = 0;
-
                         const exactFwdOrders = fwdOrders.filter(o => o.DESTINAZIONE.toLowerCase() === targetDest.toLowerCase());
 
                         if (exactFwdOrders.length > 0) {
-                            // MEDIA PONDERATA (Destinazione conosciuta)
                             let weightSum = 0, costSum = 0;
                             exactFwdOrders.forEach((o, i) => {
                                 const weight = i + 1;
                                 const cost = parseFloat(o["€/TON"].replace(',', '.'));
-                                costSum += (cost * weight);
-                                weightSum += weight;
+                                costSum += (cost * weight); weightSum += weight;
                             });
                             finalCostPerTon = costSum / weightSum;
                         } else {
-                            // STIMA PROPORZIONALE SUL PORTO PIÙ VICINO (Nuova destinazione)
+                            // STIMA SUL PORTO PIÙ VICINO
                             let kmRates = [];
-                            // Usiamo gli ultimi 10 ordini del forwarder per mediare il costo/km
-                            for (const o of fwdOrders.slice(-10)) {
+                            // Campionamento veloce per non bloccare l'app
+                            const sample = fwdOrders.slice(-5);
+                            for (const o of sample) {
                                 const oCoords = await getCoords(o.DESTINAZIONE);
                                 if (oCoords) {
                                     const d = await getRoadDist(nearestPort.coords, oCoords);
@@ -127,101 +143,84 @@
                                     if (d > 0) kmRates.push(c / d);
                                 }
                             }
-                            if (kmRates.length > 0) {
-                                const avgKmRate = kmRates.reduce((a,b) => a+b, 0) / kmRates.length;
-                                finalCostPerTon = avgKmRate * nearestPort.dist;
-                            }
+                            const avgKmRate = kmRates.length > 0 ? kmRates.reduce((a,b)=>a+b,0)/kmRates.length : 1.5; // fallback rate
+                            finalCostPerTon = avgKmRate * nearestPort.dist;
                         }
-
-                        if (finalCostPerTon > 0) {
-                            options.push({
-                                porto: nearestPort.name,
-                                forwarder: fwd,
-                                costPerTon: finalCostPerTon,
-                                distance: nearestPort.dist,
-                                isEstimated: exactFwdOrders.length === 0
-                            });
-                        }
+                        options.push({ porto: nearestPort.name, forwarder: fwd, costPerTon: finalCostPerTon, distance: nearestPort.dist, isEstimated: exactFwdOrders.length === 0 });
                     }
 
-                    // Suggerisce il forwarder più economico per il porto più vicino
                     options.sort((a, b) => a.costPerTon - b.costPerTon);
                     setResult(options[0]);
 
                 } catch (e) {
-                    alert(e.message);
+                    alert("Errore: " + e.message);
                 } finally {
                     setCalculating(false);
                 }
             };
 
-            if (loading) return <div className="h-screen flex items-center justify-center text-blue-500 font-bold">Inizializzazione Dati...</div>;
+            if (loading) return <div className="h-screen flex items-center justify-center text-blue-600 font-bold">Caricamento DB...</div>;
 
             return (
-                <div className="max-w-md mx-auto min-h-screen bg-white shadow-2xl">
-                    <header className="bg-blue-600 p-6 text-white rounded-b-[2rem]">
-                        <h1 className="text-2xl font-black italic tracking-tighter uppercase">Logistics AI</h1>
-                        <p className="text-blue-100 text-xs font-medium opacity-80">Ottimizzazione Porto più vicino</p>
+                <div className="max-w-md mx-auto min-h-screen bg-white">
+                    <header className="bg-gradient-to-r from-blue-700 to-blue-500 p-8 text-white rounded-b-[3rem] shadow-lg">
+                        <h1 className="text-3xl font-black tracking-tighter italic">LOGI-SMART</h1>
+                        <p className="text-blue-100 text-xs mt-1 font-bold">V1.2 - Ottimizzato Porto Vicino</p>
                     </header>
 
-                    <main className="p-6 -mt-8">
-                        <div className="bg-white rounded-3xl p-6 shadow-xl border border-gray-100 space-y-5">
-                            <div>
-                                <label className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Destinazione Consegna</label>
-                                <input type="text" list="dests" value={targetDest} onChange={e=>setTargetDest(e.target.value)} 
-                                    className="w-full mt-2 p-4 bg-gray-50 rounded-2xl border-2 border-transparent focus:border-blue-500 outline-none font-bold text-gray-800" 
-                                    placeholder="Città (es. Oppeano)" />
-                                <datalist id="dests">{destinations.map(d=><option key={d} value={d}/>)}</datalist>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
+                    <main className="p-6 -mt-10">
+                        <div className="bg-white rounded-[2.5rem] p-8 shadow-2xl border border-gray-50">
+                            <div className="space-y-6">
                                 <div>
-                                    <label className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Modalità</label>
-                                    <select value={mode} onChange={e=>setMode(e.target.value)} className="w-full mt-2 p-4 bg-gray-50 rounded-2xl border-none font-bold text-gray-800 appearance-none">
-                                        <option value="">Tipo...</option>
-                                        <option value="CONTAINER">Container</option>
-                                        <option value="TRUCK">Camion</option>
-                                    </select>
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Destinazione</label>
+                                    <input type="text" list="dests" value={targetDest} onChange={e=>setTargetDest(e.target.value)} 
+                                        className="w-full mt-1 p-5 bg-slate-50 rounded-2xl border-none font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none" 
+                                        placeholder="Città" />
+                                    <datalist id="dests">{destinations.map(d=><option key={d} value={d}/>)}</datalist>
                                 </div>
-                                <div>
-                                    <label className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Tonnellate</label>
-                                    <input type="number" value={tons} onChange={e=>setTons(e.target.value)} className="w-full mt-2 p-4 bg-gray-50 rounded-2xl border-none font-bold text-gray-800" placeholder="25" />
-                                </div>
-                            </div>
 
-                            <button onClick={calculate} disabled={calculating} className="w-full bg-blue-600 text-white p-5 rounded-2xl font-black uppercase tracking-tighter shadow-lg shadow-blue-200 active:scale-95 transition-all">
-                                {calculating ? "Analisi Porti e OSRM..." : "Calcola Porto Vicino"}
-                            </button>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Mezzo</label>
+                                        <select value={mode} onChange={e=>setMode(e.target.value)} className="w-full mt-1 p-5 bg-slate-50 rounded-2xl border-none font-bold text-slate-800 appearance-none outline-none">
+                                            <option value="">Tipo...</option>
+                                            <option value="CONTAINER">Container</option>
+                                            <option value="TRUCK">Camion</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Ton</label>
+                                        <input type="number" value={tons} onChange={e=>setTons(e.target.value)} className="w-full mt-1 p-5 bg-slate-50 rounded-2xl border-none font-bold text-slate-800 outline-none" placeholder="25" />
+                                    </div>
+                                </div>
+
+                                <button onClick={calculate} disabled={calculating} className="w-full bg-blue-600 text-white p-6 rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-blue-200 active:scale-95 transition-all">
+                                    {calculating ? "Analisi Geografica..." : "Calcola Stima"}
+                                </button>
+                            </div>
                         </div>
 
                         {result && (
-                            <div className="mt-6 animate-in fade-in slide-in-from-bottom-4">
-                                <div className="bg-slate-900 rounded-[2rem] p-6 text-white shadow-2xl">
-                                    <div className="flex justify-between items-start mb-6">
-                                        <div className="bg-blue-600 px-3 py-1 rounded-lg text-[10px] font-black uppercase">
-                                            {result.isEstimated ? "Nuova Rotta" : "Dato Storico"}
-                                        </div>
-                                        <div className="text-right">
-                                            <p className="text-[10px] text-gray-400 uppercase font-bold">Porto Suggerito</p>
-                                            <p className="text-xl font-black text-blue-400 uppercase italic">{result.porto}</p>
+                            <div className="mt-8 animate-in fade-in slide-in-from-bottom-6">
+                                <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden">
+                                    <div className="flex justify-between items-start relative z-10">
+                                        <div className="bg-blue-600 px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest">
+                                            {result.isEstimated ? "Stima Proporzionale" : "Dato Storico"}
                                         </div>
                                     </div>
 
-                                    <div className="mb-6">
-                                        <p className="text-[10px] text-gray-400 uppercase font-bold">Forwarder Consigliato</p>
-                                        <p className="text-2xl font-bold">{result.forwarder}</p>
-                                        <p className="text-xs text-blue-300 font-medium">Distanza: {Math.round(result.distance)} KM stradali</p>
+                                    <div className="mt-8 relative z-10">
+                                        <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">Porto più vicino</p>
+                                        <p className="text-3xl font-black text-blue-400 italic uppercase">{result.porto}</p>
+                                        <p className="text-sm text-slate-300 mt-1">{result.forwarder} • {Math.round(result.distance)} KM</p>
                                     </div>
 
-                                    <div className="border-t border-white/10 pt-6">
-                                        <p className="text-[10px] text-gray-400 uppercase font-bold mb-1">Preventivo Totale</p>
-                                        <div className="flex items-baseline gap-2">
-                                            <span className="text-4xl font-black">€ {(result.costPerTon * tons).toLocaleString('it-IT', {minimumFractionDigits: 2})}</span>
-                                        </div>
-                                        <p className="text-[10px] text-blue-400 font-bold mt-2 italic">TARIFFA APPLICATA: € {result.costPerTon.toFixed(2)} / TON</p>
+                                    <div className="mt-8 pt-8 border-t border-white/10 relative z-10 text-center">
+                                        <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">Costo Totale Stimato</p>
+                                        <p className="text-5xl font-black mt-2">€ {(result.costPerTon * tons).toLocaleString('it-IT', {minimumFractionDigits: 2})}</p>
+                                        <p className="text-blue-400 text-xs font-bold mt-3 italic uppercase">€ {result.costPerTon.toFixed(2)} / Ton</p>
                                     </div>
                                 </div>
-                                <p className="text-center text-[10px] text-gray-400 mt-4 uppercase font-bold tracking-widest">Sistema di stima basato su costi storici e km reali</p>
                             </div>
                         )}
                     </main>
