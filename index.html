@@ -88,72 +88,99 @@
                 return (R * c) * 1.25; 
             };
 
-            const calculate = async () => {
+           const calculate = async () => {
                 if (!targetDest || !mode || !tons) return alert("Inserisci tutti i dati");
                 setCalculating(true);
                 setResult(null);
 
                 try {
                     const targetCoords = await getCoords(targetDest);
-                    if (!targetCoords) throw new Error("Località non trovata");
+                    if (!targetCoords) throw new Error("Località destinazione non trovata");
 
-                    const filtered = data.filter(r => r["MODALITA'"] === mode);
-                    const portsInData = [...new Set(filtered.map(r => r.PORTO))];
+                    // Filtriamo per modalità (Container/Truck)
+                    const filtered = data.filter(r => 
+                        r["MODALITA'"]?.toUpperCase().trim() === mode.toUpperCase().trim()
+                    );
+                    
+                    if (filtered.length === 0) throw new Error("Nessun dato trovato per questa modalità nel CSV");
+
+                    // Identifichiamo i porti unici nel CSV
+                    const uniquePortNames = [...new Set(filtered.map(r => r.PORTO?.trim()).filter(Boolean))];
                     
                     let portDistances = [];
-                    for (const portName of portsInData) {
-                        const pCoord = await getCoords(portName);
+                    for (const portName of uniquePortNames) {
+                        const pCoord = await getCoords(portName); // Cerca nel DB interno o su internet
                         if (pCoord) {
                             const dist = await getRoadDist(pCoord, targetCoords);
                             portDistances.push({ name: portName, dist, coords: pCoord });
                         }
                     }
 
-                    portDistances.sort((a, b) => a.dist - b.dist);
-                    if (portDistances.length === 0) throw new Error("Porti non configurati nel CSV");
+                    if (portDistances.length === 0) throw new Error("Non riesco a localizzare i porti indicati nel CSV");
 
+                    // 1. TROVA IL PORTO PIÙ VICINO (STRADALMENTE)
+                    portDistances.sort((a, b) => a.dist - b.dist);
                     const nearestPort = portDistances[0];
-                    const portOrders = filtered.filter(r => r.PORTO === nearestPort.name);
+
+                    // 2. PRENDI GLI ORDINI DI QUEL PORTO
+                    const portOrders = filtered.filter(r => r.PORTO?.trim() === nearestPort.name);
                     const forwardersInPort = [...new Set(portOrders.map(r => r.FORWARDER))];
                     
                     let options = [];
                     for (const fwd of forwardersInPort) {
                         const fwdOrders = portOrders.filter(o => o.FORWARDER === fwd);
                         let finalCostPerTon = 0;
-                        const exactFwdOrders = fwdOrders.filter(o => o.DESTINAZIONE.toLowerCase() === targetDest.toLowerCase());
+                        
+                        const exactMatch = fwdOrders.filter(o => 
+                            o.DESTINAZIONE.toLowerCase().trim() === targetDest.toLowerCase().trim()
+                        );
 
-                        if (exactFwdOrders.length > 0) {
+                        if (exactMatch.length > 0) {
+                            // MEDIA PONDERATA (Pesa di più gli ordini in fondo al CSV)
                             let weightSum = 0, costSum = 0;
-                            exactFwdOrders.forEach((o, i) => {
+                            exactMatch.forEach((o, i) => {
                                 const weight = i + 1;
-                                const cost = parseFloat(o["€/TON"].replace(',', '.'));
-                                costSum += (cost * weight); weightSum += weight;
+                                const cost = parseFloat(o["€/TON"].toString().replace(',', '.'));
+                                if(!isNaN(cost)) {
+                                    costSum += (cost * weight);
+                                    weightSum += weight;
+                                }
                             });
                             finalCostPerTon = costSum / weightSum;
                         } else {
-                            // STIMA SUL PORTO PIÙ VICINO
+                            // STIMA PROPORZIONALE SUL PORTO PIÙ VICINO
                             let kmRates = [];
-                            // Campionamento veloce per non bloccare l'app
-                            const sample = fwdOrders.slice(-5);
+                            const sample = fwdOrders.slice(-8); // Prende gli ultimi 8 ordini del forwarder
                             for (const o of sample) {
                                 const oCoords = await getCoords(o.DESTINAZIONE);
                                 if (oCoords) {
                                     const d = await getRoadDist(nearestPort.coords, oCoords);
-                                    const c = parseFloat(o["€/TON"].replace(',', '.'));
-                                    if (d > 0) kmRates.push(c / d);
+                                    const c = parseFloat(o["€/TON"].toString().replace(',', '.'));
+                                    if (d > 0 && !isNaN(c)) kmRates.push(c / d);
                                 }
                             }
-                            const avgKmRate = kmRates.length > 0 ? kmRates.reduce((a,b)=>a+b,0)/kmRates.length : 1.5; // fallback rate
+                            const avgKmRate = kmRates.length > 0 ? kmRates.reduce((a,b)=>a+b,0)/kmRates.length : 1.5;
                             finalCostPerTon = avgKmRate * nearestPort.dist;
                         }
-                        options.push({ porto: nearestPort.name, forwarder: fwd, costPerTon: finalCostPerTon, distance: nearestPort.dist, isEstimated: exactFwdOrders.length === 0 });
+                        
+                        if(finalCostPerTon > 0) {
+                            options.push({
+                                porto: nearestPort.name,
+                                forwarder: fwd,
+                                costPerTon: finalCostPerTon,
+                                distance: nearestPort.dist,
+                                isEstimated: exactMatch.length === 0
+                            });
+                        }
                     }
+
+                    if (options.length === 0) throw new Error("Impossibile calcolare costi per i fornitori di questo porto");
 
                     options.sort((a, b) => a.costPerTon - b.costPerTon);
                     setResult(options[0]);
 
                 } catch (e) {
-                    alert("Errore: " + e.message);
+                    alert("Attenzione: " + e.message);
                 } finally {
                     setCalculating(false);
                 }
