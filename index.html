@@ -392,15 +392,24 @@
               
               const ton = parseFloat(tonnellate);
               
-              // Calcola dettaglio costi medi
+              // Calcola costi medi SOLO per il porto scelto e il forwarder scelto
               console.log('=== CALCOLO COSTI DETTAGLIATO ===');
-              console.log('Ordini da usare per calcolo:', ordersToUse.length);
+              console.log('Porto scelto:', bestOption.porto);
+              console.log('Forwarder scelto:', bestOption.forwarder);
+              
+              // Filtra ordini del porto+forwarder scelto
+              const ordersForChosen = ordersToUse.filter(order => 
+                order.PORTO === bestOption.porto && 
+                order.FORWARDER === bestOption.forwarder
+              );
+              
+              console.log('Ordini per porto+forwarder scelto:', ordersForChosen.length);
               
               let totalCostiFissi = 0;
               let totalInland = 0;
               let totalOrders = 0;
               
-              ordersToUse.forEach((order, idx) => {
+              ordersForChosen.forEach((order, idx) => {
                 const freeOut = parseFloat(order['FREE OUT'] || 0);
                 const deliveryOrder = parseFloat(order['DELIVERY ORDER'] || 0);
                 const cicloTerminal = parseFloat(order['CICLO TERMINAL'] || 0);
@@ -416,8 +425,17 @@
                 const costiFissi = freeOut + deliveryOrder + cicloTerminal + dogana + 
                                    dirittoFisso + flegt + visitaMerce + soste + svincolo;
                 
-                console.log(`Ordine ${idx+1} (${order.ORDINE}) - MODALITA': ${order["MODALITA'"]}`);
-                console.log('  Costi fissi:', costiFissi.toFixed(2), '(FREE OUT:', freeOut, '+ CICLO:', cicloTerminal, '+ altri)');
+                console.log(`Ordine ${idx+1} (${order.ORDINE}) - ${order.DESTINAZIONE}`);
+                console.log('  Costi fissi:', costiFissi.toFixed(2), 
+                           '(FREE OUT:', freeOut, 
+                           '+ DELIVERY:', deliveryOrder,
+                           '+ CICLO:', cicloTerminal, 
+                           '+ DOGANA:', dogana,
+                           '+ DIRITTO:', dirittoFisso,
+                           '+ FLEGT:', flegt,
+                           '+ VISITA:', visitaMerce,
+                           '+ SOSTE:', soste,
+                           '+ SVINCOLO:', svincolo, ')');
                 console.log('  INLAND:', inland.toFixed(2));
                 
                 totalCostiFissi += costiFissi;
@@ -428,40 +446,48 @@
               const avgCostiFissi = totalCostiFissi / totalOrders;
               const avgInland = totalInland / totalOrders;
               
-              console.log('MEDIA Costi Fissi:', avgCostiFissi.toFixed(2));
-              console.log('MEDIA INLAND:', avgInland.toFixed(2));
+              console.log('--- MEDIE PER', bestOption.porto, '+', bestOption.forwarder, '---');
+              console.log('MEDIA Costi Fissi:', avgCostiFissi.toFixed(2), '€');
+              console.log('MEDIA INLAND:', avgInland.toFixed(2), '€');
               
               // Se è una stima, aggiusta l'INLAND in base alla distanza
               let adjustedInland = avgInland;
               if (isEstimated && referenceDestinations.length > 0) {
-                const avgRefDistance = referenceDestinations.reduce((sum, r) => sum + r.distance, 0) / referenceDestinations.length;
                 const targetCoords = await getCoordinates(destinazione);
                 
-                // Calcola distanza media dei porti dalle destinazioni di riferimento
+                // Calcola distanza media del porto scelto dalle sue destinazioni storiche
                 let avgPortDistToRef = 0;
-                for (const ref of referenceDestinations) {
-                  const refCoords = await getCoordinates(ref.destination);
+                let countDistances = 0;
+                
+                for (const order of ordersForChosen) {
+                  const refCoords = await getCoordinates(order.DESTINAZIONE);
                   const portCoord = portCoords[bestOption.porto.toUpperCase()];
                   if (refCoords && portCoord) {
-                    avgPortDistToRef += await calculateDistance(portCoord, refCoords);
+                    const dist = await calculateDistance(portCoord, refCoords);
+                    avgPortDistToRef += dist;
+                    countDistances++;
                   }
                 }
-                avgPortDistToRef = avgPortDistToRef / referenceDestinations.length;
                 
-                // Calcola distanza porto dalla destinazione target
-                const portCoord = portCoords[bestOption.porto.toUpperCase()];
-                if (portCoord && targetCoords) {
-                  const portDistToTarget = await calculateDistance(portCoord, targetCoords);
+                if (countDistances > 0) {
+                  avgPortDistToRef = avgPortDistToRef / countDistances;
                   
-                  // Aggiusta INLAND proporzionalmente alla differenza di distanza
-                  const distanceRatio = portDistToTarget / avgPortDistToRef;
-                  adjustedInland = avgInland * distanceRatio;
-                  
-                  console.log('=== STIMA INLAND ===');
-                  console.log('INLAND medio storico:', avgInland.toFixed(2), '€');
-                  console.log('Distanza media porto-riferimenti:', avgPortDistToRef.toFixed(0), 'km');
-                  console.log('Distanza porto-target:', portDistToTarget.toFixed(0), 'km');
-                  console.log('INLAND stimato:', adjustedInland.toFixed(2), '€');
+                  // Calcola distanza porto dalla destinazione target
+                  const portCoord = portCoords[bestOption.porto.toUpperCase()];
+                  if (portCoord && targetCoords) {
+                    const portDistToTarget = await calculateDistance(portCoord, targetCoords);
+                    
+                    // Aggiusta INLAND proporzionalmente alla differenza di distanza
+                    const distanceRatio = portDistToTarget / avgPortDistToRef;
+                    adjustedInland = avgInland * distanceRatio;
+                    
+                    console.log('=== STIMA INLAND ===');
+                    console.log('INLAND medio storico (porto', bestOption.porto + '):', avgInland.toFixed(2), '€');
+                    console.log('Distanza media porto→destinazioni storiche:', avgPortDistToRef.toFixed(0), 'km');
+                    console.log('Distanza porto→target:', portDistToTarget.toFixed(0), 'km');
+                    console.log('Ratio distanze:', distanceRatio.toFixed(2));
+                    console.log('INLAND stimato:', adjustedInland.toFixed(2), '€');
+                  }
                 }
               }
               
