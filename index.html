@@ -298,6 +298,18 @@
                 }
               });
               
+              // Definisci coordinate porti (disponibile per tutto il calcolo)
+              const portCoords = {
+                'VENEZIA': { lat: 45.4408, lon: 12.3155 },
+                'TRIESTE': { lat: 45.6495, lon: 13.7768 },
+                'GENOVA': { lat: 44.4056, lon: 8.9463 },
+                'LIVORNO': { lat: 43.5485, lon: 10.3106 },
+                'RAVENNA': { lat: 44.4184, lon: 12.2035 },
+                'NAPOLI': { lat: 40.8518, lon: 14.2681 },
+                'SALERNO': { lat: 40.6824, lon: 14.7681 },
+                'CIVITAVECCHIA': { lat: 42.0938, lon: 11.7967 }
+              };
+              
               // Se è una stima, calcola distanza dei porti dalla destinazione target
               let bestOption = null;
               let lowestCost = Infinity;
@@ -307,17 +319,6 @@
                 console.log('=== CALCOLO DISTANZE PORTI ===');
                 console.log('Destinazione richiesta:', destinazione);
                 console.log('Coordinate destinazione:', targetCoords);
-                
-                const portCoords = {
-                  'VENEZIA': { lat: 45.4408, lon: 12.3155 },
-                  'TRIESTE': { lat: 45.6495, lon: 13.7768 },
-                  'GENOVA': { lat: 44.4056, lon: 8.9463 },
-                  'LIVORNO': { lat: 43.5485, lon: 10.3106 },
-                  'RAVENNA': { lat: 44.4184, lon: 12.2035 },
-                  'NAPOLI': { lat: 40.8518, lon: 14.2681 },
-                  'SALERNO': { lat: 40.6824, lon: 14.7681 },
-                  'CIVITAVECCHIA': { lat: 42.0938, lon: 11.7967 }
-                };
                 
                 // Per ogni combinazione, calcola distanza del porto
                 const combosWithDistance = [];
