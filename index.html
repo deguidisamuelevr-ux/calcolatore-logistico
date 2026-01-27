@@ -226,7 +226,21 @@
             setIsCalculating(true);
             
             try {
-              const filtered = excelData.filter(r => r["MODALITA'"] === modalita && r['€/TON']);
+              console.log('=== INIZIO CALCOLO ===');
+              console.log('Modalità richiesta:', modalita);
+              console.log('Totale ordini disponibili:', excelData.length);
+              
+              const filtered = excelData.filter(r => {
+                const modalitaRow = r["MODALITA'"];
+                const hasEuroTon = r['€/TON'];
+                console.log('Ordine:', r.ORDINE, '- MODALITA\':', modalitaRow, '- Match:', modalitaRow === modalita, '- €/TON:', hasEuroTon);
+                return modalitaRow === modalita && hasEuroTon;
+              });
+              
+              console.log('Ordini filtrati per modalità "' + modalita + '":', filtered.length);
+              if (filtered.length > 0) {
+                console.log('Primo ordine filtrato:', filtered[0]);
+              }
               
               if (filtered.length === 0) {
                 alert('Nessun ordine per questa modalità');
@@ -379,11 +393,14 @@
               const ton = parseFloat(tonnellate);
               
               // Calcola dettaglio costi medi
+              console.log('=== CALCOLO COSTI DETTAGLIATO ===');
+              console.log('Ordini da usare per calcolo:', ordersToUse.length);
+              
               let totalCostiFissi = 0;
               let totalInland = 0;
               let totalOrders = 0;
               
-              ordersToUse.forEach(order => {
+              ordersToUse.forEach((order, idx) => {
                 const freeOut = parseFloat(order['FREE OUT'] || 0);
                 const deliveryOrder = parseFloat(order['DELIVERY ORDER'] || 0);
                 const cicloTerminal = parseFloat(order['CICLO TERMINAL'] || 0);
@@ -399,6 +416,10 @@
                 const costiFissi = freeOut + deliveryOrder + cicloTerminal + dogana + 
                                    dirittoFisso + flegt + visitaMerce + soste + svincolo;
                 
+                console.log(`Ordine ${idx+1} (${order.ORDINE}) - MODALITA': ${order["MODALITA'"]}`);
+                console.log('  Costi fissi:', costiFissi.toFixed(2), '(FREE OUT:', freeOut, '+ CICLO:', cicloTerminal, '+ altri)');
+                console.log('  INLAND:', inland.toFixed(2));
+                
                 totalCostiFissi += costiFissi;
                 totalInland += inland;
                 totalOrders++;
@@ -406,6 +427,9 @@
               
               const avgCostiFissi = totalCostiFissi / totalOrders;
               const avgInland = totalInland / totalOrders;
+              
+              console.log('MEDIA Costi Fissi:', avgCostiFissi.toFixed(2));
+              console.log('MEDIA INLAND:', avgInland.toFixed(2));
               
               // Se è una stima, aggiusta l'INLAND in base alla distanza
               let adjustedInland = avgInland;
