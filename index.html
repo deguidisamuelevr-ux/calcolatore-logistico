@@ -377,11 +377,79 @@
               
               const ton = parseFloat(tonnellate);
               
+              // Calcola dettaglio costi medi
+              let totalCostiFissi = 0;
+              let totalInland = 0;
+              let totalOrders = 0;
+              
+              ordersToUse.forEach(order => {
+                const freeOut = parseFloat(order['FREE OUT'] || 0);
+                const deliveryOrder = parseFloat(order['DELIVERY ORDER'] || 0);
+                const cicloTerminal = parseFloat(order['CICLO TERMINAL'] || 0);
+                const dogana = parseFloat(order['DOGANA'] || 0);
+                const dirittoFisso = parseFloat(order['DIRITTO FISSO'] || 0);
+                const flegt = parseFloat(order['FLEGT'] || 0);
+                const visitaMerce = parseFloat(order['VISITA MERCE'] || 0);
+                const soste = parseFloat(order['SOSTE'] || 0);
+                const svincolo = parseFloat(order['SVINCOLO'] || 0);
+                const inland = parseFloat(order['INLAND'] || 0);
+                
+                // Costi fissi = tutti i costi TRANNE inland
+                const costiFissi = freeOut + deliveryOrder + cicloTerminal + dogana + 
+                                   dirittoFisso + flegt + visitaMerce + soste + svincolo;
+                
+                totalCostiFissi += costiFissi;
+                totalInland += inland;
+                totalOrders++;
+              });
+              
+              const avgCostiFissi = totalCostiFissi / totalOrders;
+              const avgInland = totalInland / totalOrders;
+              
+              // Se è una stima, aggiusta l'INLAND in base alla distanza
+              let adjustedInland = avgInland;
+              if (isEstimated && referenceDestinations.length > 0) {
+                const avgRefDistance = referenceDestinations.reduce((sum, r) => sum + r.distance, 0) / referenceDestinations.length;
+                const targetCoords = await getCoordinates(destinazione);
+                
+                // Calcola distanza media dei porti dalle destinazioni di riferimento
+                let avgPortDistToRef = 0;
+                for (const ref of referenceDestinations) {
+                  const refCoords = await getCoordinates(ref.destination);
+                  const portCoord = portCoords[bestOption.porto.toUpperCase()];
+                  if (refCoords && portCoord) {
+                    avgPortDistToRef += await calculateDistance(portCoord, refCoords);
+                  }
+                }
+                avgPortDistToRef = avgPortDistToRef / referenceDestinations.length;
+                
+                // Calcola distanza porto dalla destinazione target
+                const portCoord = portCoords[bestOption.porto.toUpperCase()];
+                if (portCoord && targetCoords) {
+                  const portDistToTarget = await calculateDistance(portCoord, targetCoords);
+                  
+                  // Aggiusta INLAND proporzionalmente alla differenza di distanza
+                  const distanceRatio = portDistToTarget / avgPortDistToRef;
+                  adjustedInland = avgInland * distanceRatio;
+                  
+                  console.log('=== STIMA INLAND ===');
+                  console.log('INLAND medio storico:', avgInland.toFixed(2), '€');
+                  console.log('Distanza media porto-riferimenti:', avgPortDistToRef.toFixed(0), 'km');
+                  console.log('Distanza porto-target:', portDistToTarget.toFixed(0), 'km');
+                  console.log('INLAND stimato:', adjustedInland.toFixed(2), '€');
+                }
+              }
+              
+              const costoTotalePerTon = (avgCostiFissi + adjustedInland) / ton;
+              const costoTotale = avgCostiFissi + adjustedInland;
+              
               setRisultato({
                 porto: bestOption.porto,
                 forwarder: bestOption.forwarder,
-                costoPerTon: bestOption.avgCost.toFixed(2),
-                costoTotale: (bestOption.avgCost * ton).toFixed(2),
+                costiFissi: avgCostiFissi.toFixed(2),
+                inland: adjustedInland.toFixed(2),
+                costoTotale: costoTotale.toFixed(2),
+                costoPerTon: (costoTotale / ton).toFixed(2),
                 tonnellate: ton,
                 numOrdiniStorici: bestOption.numOrders,
                 isEstimated: isEstimated,
@@ -519,15 +587,29 @@
                       </div>
                     </div>
 
-                    <div className="bg-green-50 p-6 rounded-xl">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <p className="text-sm text-gray-600">€/Ton</p>
-                          <p className="text-3xl font-bold text-green-700">€{risultato.costoPerTon}</p>
+                    <div className="bg-green-50 p-6 rounded-xl mb-6">
+                      <h3 className="font-semibold text-gray-700 mb-4">Riepilogo Costi</h3>
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-gray-600">Costi Fissi (porto + dogana + servizi)</span>
+                          <span className="text-lg font-bold text-gray-800">€{risultato.costiFissi}</span>
                         </div>
-                        <div>
-                          <p className="text-sm text-gray-600">Totale</p>
-                          <p className="text-3xl font-bold text-green-700">€{risultato.costoTotale}</p>
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-gray-600">Inland (trasporto {risultato.porto} → destinazione)</span>
+                          <span className="text-lg font-bold text-gray-800">€{risultato.inland}</span>
+                        </div>
+                        <div className="border-t-2 border-green-200 pt-3 mt-3">
+                          <div className="flex justify-between items-center">
+                            <span className="text-base font-semibold text-gray-700">Costo Totale</span>
+                            <span className="text-2xl font-bold text-green-700">€{risultato.costoTotale}</span>
+                          </div>
+                          <div className="flex justify-between items-center mt-2">
+                            <span className="text-sm text-gray-600">Costo per Tonnellata</span>
+                            <span className="text-lg font-bold text-green-700">€{risultato.costoPerTon}/ton</span>
+                          </div>
+                          <p className="text-xs text-gray-500 mt-2">
+                            ({risultato.tonnellate} tonnellate)
+                          </p>
                         </div>
                       </div>
                     </div>
