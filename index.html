@@ -434,6 +434,8 @@
               'cellole': { lat: 41.1147, lon: 13.9286 },
               'isola del liri': { lat: 41.6808, lon: 13.5764 },
               'villa santa lucia': { lat: 41.4697, lon: 13.7730 },
+              'villa s.lucia': { lat: 41.4697, lon: 13.7730 },
+              'villa s lucia': { lat: 41.4697, lon: 13.7730 },
               'roccapiemonte': { lat: 40.7619, lon: 14.6908 },
               'ausonia': { lat: 41.3364, lon: 13.7300 },
               
@@ -642,6 +644,7 @@
                   
                   // USA TUTTE le destinazioni TRUCK disponibili per trovare la migliore
                   const samplesToCheck = filtered;
+                  const destsWithDist = [];
                   
                   // PARALLELO: Calcola tutte le coordinate insieme
                   const coordsPromises = samplesToCheck.map(row => getCoordinates(row.DESTINAZIONE));
