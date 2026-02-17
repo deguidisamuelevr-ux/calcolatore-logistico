@@ -54,6 +54,7 @@
               
               if (char === '"') {
                 inQuotes = !inQuotes;
+                // Non aggiungere le virgolette al valore
               } else if (char === ',' && !inQuotes) {
                 result.push(current.trim());
                 current = '';
@@ -850,11 +851,20 @@
                 order.FORWARDER === bestOption.forwarder
               );
               
-              let totalCostiFissi = 0;
-              let totalInland = 0;
+              console.log('Ordini per porto+forwarder scelto:', ordersForChosen.length);
+              
+              // Calcola costi PER TONNELLATA (non totali!)
+              let totalCostiFissiPerTon = 0;
+              let totalInlandPerTon = 0;
               let totalOrders = 0;
               
               ordersForChosen.forEach((order, idx) => {
+                const tons = parseFloat(order.TON || 0);
+                if (tons <= 0) {
+                  console.log(`Ordine ${order.ORDINE} saltato: tonnellate = ${tons}`);
+                  return;
+                }
+                
                 const freeOut = parseFloat(order['FREE OUT'] || 0);
                 const deliveryOrder = parseFloat(order['DELIVERY ORDER'] || 0);
                 const cicloTerminal = parseFloat(order['CICLO TERMINAL'] || 0);
@@ -866,22 +876,35 @@
                 const svincolo = parseFloat(order['SVINCOLO'] || 0);
                 const inland = parseFloat(order['INLAND'] || 0);
                 
-                const costiFissi = freeOut + deliveryOrder + cicloTerminal + dogana + 
+                const costiFissiTotali = freeOut + deliveryOrder + cicloTerminal + dogana + 
                                    dirittoFisso + flegt + visitaMerce + soste + svincolo;
                 
-                totalCostiFissi += costiFissi;
-                totalInland += inland;
+                // NORMALIZZA per tonnellata
+                const costiFissiPerTon = costiFissiTotali / tons;
+                const inlandPerTon = inland / tons;
+                
+                console.log(`Ordine ${idx+1} (${order.ORDINE}) - ${tons} ton`);
+                console.log(`  Costi fissi: €${costiFissiTotali.toFixed(2)} → €${costiFissiPerTon.toFixed(2)}/ton`);
+                console.log(`  INLAND: €${inland.toFixed(2)} → €${inlandPerTon.toFixed(2)}/ton`);
+                
+                totalCostiFissiPerTon += costiFissiPerTon;
+                totalInlandPerTon += inlandPerTon;
                 totalOrders++;
               });
               
-              const avgCostiFissi = totalCostiFissi / totalOrders;
-              const avgInland = totalInland / totalOrders;
+              const avgCostiFissiPerTon = totalCostiFissiPerTon / totalOrders;
+              const avgInlandPerTon = totalInlandPerTon / totalOrders;
               
-              console.log('--- MEDIE PER', bestOption.porto, '+', bestOption.forwarder, '---');
-              console.log('MEDIA Costi Fissi:', avgCostiFissi.toFixed(2), '€');
-              console.log('MEDIA INLAND:', avgInland.toFixed(2), '€');
+              console.log('--- MEDIE PER TONNELLATA ---');
+              console.log('MEDIA Costi Fissi:', avgCostiFissiPerTon.toFixed(2), '€/ton');
+              console.log('MEDIA INLAND:', avgInlandPerTon.toFixed(2), '€/ton');
               
-              let adjustedInland = avgInland;
+              // Ora moltiplica per le tonnellate richieste
+              const ton = parseFloat(tonnellate);
+              const costiFissiTotali = avgCostiFissiPerTon * ton;
+              const inlandTotale = avgInlandPerTon * ton;
+              
+              let adjustedInlandPerTon = avgInlandPerTon;
               if (isEstimated && referenceDestinations.length > 0) {
                 const targetCoords = await getCoordinates(destinazione);
                 
@@ -905,24 +928,33 @@
                   if (portCoord && targetCoords) {
                     const portDistToTarget = await calculateDistance(portCoord, targetCoords);
                     const distanceRatio = portDistToTarget / avgPortDistToRef;
-                    adjustedInland = avgInland * distanceRatio;
+                    adjustedInlandPerTon = avgInlandPerTon * distanceRatio;
                     
                     console.log('=== STIMA INLAND ===');
-                    console.log('INLAND medio storico:', avgInland.toFixed(2), '€');
+                    console.log('INLAND medio storico:', avgInlandPerTon.toFixed(2), '€/ton');
                     console.log('Distanza media porto→destinazioni storiche:', avgPortDistToRef.toFixed(0), 'km');
                     console.log('Distanza porto→target:', portDistToTarget.toFixed(0), 'km');
-                    console.log('INLAND stimato:', adjustedInland.toFixed(2), '€');
+                    console.log('INLAND stimato:', adjustedInlandPerTon.toFixed(2), '€/ton');
                   }
                 }
               }
               
-              const costoTotale = avgCostiFissi + adjustedInland;
+              // Ricalcola i totali con l'INLAND aggiustato
+              const finalCostiFissi = avgCostiFissiPerTon * ton;
+              const finalInland = adjustedInlandPerTon * ton;
+              const costoTotale = finalCostiFissi + finalInland;
+              
+              console.log('=== CALCOLO FINALE ===');
+              console.log(`Per ${ton} tonnellate:`);
+              console.log(`Costi Fissi: €${avgCostiFissiPerTon.toFixed(2)}/ton × ${ton} = €${finalCostiFissi.toFixed(2)}`);
+              console.log(`INLAND: €${adjustedInlandPerTon.toFixed(2)}/ton × ${ton} = €${finalInland.toFixed(2)}`);
+              console.log(`TOTALE: €${costoTotale.toFixed(2)}`);
               
               setRisultato({
                 porto: bestOption.porto,
                 forwarder: bestOption.forwarder,
-                costiFissi: avgCostiFissi.toFixed(2),
-                inland: adjustedInland.toFixed(2),
+                costiFissi: finalCostiFissi.toFixed(2),
+                inland: finalInland.toFixed(2),
                 costoTotale: costoTotale.toFixed(2),
                 costoPerTon: (costoTotale / ton).toFixed(2),
                 tonnellate: ton,
