@@ -30,6 +30,7 @@
           const [tonnellate, setTonnellate] = useState('');
           const [risultato, setRisultato] = useState(null);
           const [availableDestinations, setAvailableDestinations] = useState([]);
+          const [suggestedDestinations, setSuggestedDestinations] = useState([]);
           const [isCalculating, setIsCalculating] = useState(false);
           const [isLoading, setIsLoading] = useState(true);
           const [dataError, setDataError] = useState(false);
@@ -202,6 +203,9 @@
               const dests = [...new Set(data1.map(r => r.DESTINAZIONE).filter(Boolean))];
               setAvailableDestinations(dests.sort());
               
+              // Analizza destinazioni frequenti per suggerimenti Foglio 2
+              analyzeSuggestedDestinations(data1, data2);
+              
             } catch (error) {
               console.error('ERRORE:', error);
               setDataError(true);
@@ -209,6 +213,91 @@
             } finally {
               setIsLoading(false);
             }
+          };
+
+          // Cache per coordinate per evitare chiamate ripetute
+          const coordsCache = {};
+
+          const analyzeSuggestedDestinations = (foglio1Data, foglio2Data) => {
+            console.log('=== ANALISI DESTINAZIONI FREQUENTI ===');
+            
+            // Crea mappa destinazioni nel Foglio 2 (già nel tariffario)
+            const tariffarioSet = new Set(
+              (foglio2Data || []).map(t => 
+                `${(t['Luogo di arrivo'] || '').trim().toUpperCase()}|${(t['Tipologia'] || '').trim().toUpperCase()}`
+              )
+            );
+            
+            // Conta occorrenze per destinazione + modalità
+            const destCounts = {};
+            foglio1Data.forEach(order => {
+              const dest = order.DESTINAZIONE;
+              const modalita = order["MODALITA'"];
+              if (!dest || !modalita) return;
+              
+              const key = `${dest}|${modalita}`;
+              if (!destCounts[key]) {
+                destCounts[key] = {
+                  destinazione: dest,
+                  modalita: modalita,
+                  count: 0,
+                  porti: new Set(),
+                  forwarders: new Set(),
+                  costiTotali: [],
+                  ultimoOrdine: order.ORDINE
+                };
+              }
+              
+              destCounts[key].count++;
+              if (order.PORTO) destCounts[key].porti.add(order.PORTO);
+              if (order.FORWARDER) destCounts[key].forwarders.add(order.FORWARDER);
+              
+              // Calcola costo totale (costi fissi + inland)
+              const totale = (parseFloat(order['FREE OUT'] || 0) +
+                             parseFloat(order['DELIVERY ORDER'] || 0) +
+                             parseFloat(order['CICLO TERMINAL'] || 0) +
+                             parseFloat(order['DOGANA'] || 0) +
+                             parseFloat(order['DIRITTO FISSO'] || 0) +
+                             parseFloat(order['INLAND'] || 0) +
+                             parseFloat(order['FLEGT'] || 0) +
+                             parseFloat(order['VISITA MERCE'] || 0) +
+                             parseFloat(order['SOSTE'] || 0) +
+                             parseFloat(order['SVINCOLO'] || 0));
+              
+              if (totale > 0) {
+                destCounts[key].costiTotali.push(totale);
+              }
+            });
+            
+            // Filtra destinazioni con 3+ occorrenze e NON nel tariffario
+            const suggestions = Object.values(destCounts)
+              .filter(d => {
+                const tariffKey = `${d.destinazione.trim().toUpperCase()}|${d.modalita.trim().toUpperCase()}`;
+                return d.count >= 3 && !tariffarioSet.has(tariffKey);
+              })
+              .sort((a, b) => b.count - a.count)
+              .slice(0, 10) // Top 10
+              .map(d => {
+                const avgCosto = d.costiTotali.length > 0
+                  ? (d.costiTotali.reduce((a, b) => a + b, 0) / d.costiTotali.length).toFixed(2)
+                  : 'N/D';
+                
+                return {
+                  destinazione: d.destinazione,
+                  modalita: d.modalita,
+                  occorrenze: d.count,
+                  portoComune: [...d.porti][0] || 'N/D',
+                  forwarderComune: [...d.forwarders][0] || 'N/D',
+                  costoMedio: avgCosto
+                };
+              });
+            
+            console.log(`Trovate ${suggestions.length} destinazioni frequenti da aggiungere al Foglio 2:`);
+            suggestions.forEach((s, i) => {
+              console.log(`${i+1}. ${s.destinazione} (${s.modalita}) - ${s.occorrenze}× - Media: €${s.costoMedio}`);
+            });
+            
+            setSuggestedDestinations(suggestions);
           };
 
           // Cache per coordinate per evitare chiamate ripetute
@@ -452,11 +541,10 @@
                     return;
                   }
                   
-                  const destsWithDist = [];
-                  console.log(`Calcolo distanze da ${Math.min(filtered.length, 3)} destinazioni...`);
+                  console.log(`Calcolo distanze da tutte le ${filtered.length} destinazioni...`);
                   
-                  // LIMITA a max 3 destinazioni per velocità massima
-                  const samplesToCheck = filtered.slice(0, 3);
+                  // USA TUTTE le destinazioni TRUCK disponibili per trovare la migliore
+                  const samplesToCheck = filtered;
                   
                   // PARALLELO: Calcola tutte le coordinate insieme
                   const coordsPromises = samplesToCheck.map(row => getCoordinates(row.DESTINAZIONE));
@@ -483,8 +571,13 @@
                   });
                   
                   destsWithDist.sort((a, b) => a.distance - b.distance);
-                  const nearest = destsWithDist.slice(0, 2); // RIDOTTO A 2 per velocità
+                  const nearest = destsWithDist.slice(0, 3); // Top 3 più vicine
                   referenceDestinations = nearest;
+                  
+                  console.log('Destinazioni più vicine trovate:');
+                  nearest.forEach((d, i) => {
+                    console.log(`${i+1}. ${d.destination}: ${d.distance.toFixed(0)}km`);
+                  });
                   
                   nearest.forEach(nd => {
                     const orders = filtered.filter(r => r.DESTINAZIONE === nd.destination);
@@ -618,15 +711,17 @@
                 
                 const combosWithDistance = (await Promise.all(portDistancePromises)).filter(Boolean);
                 
-                combosWithDistance.sort((a, b) => {
-                  const distDiff = a.portDistance - b.portDistance;
-                  if (Math.abs(distDiff) > 100) return distDiff;
-                  return a.avgCost - b.avgCost;
+                // Per le STIME: ordina SOLO per distanza porto (il costo è meno importante)
+                combosWithDistance.sort((a, b) => a.portDistance - b.portDistance);
+                
+                console.log('--- Porti ordinati per distanza ---');
+                combosWithDistance.forEach((c, i) => {
+                  console.log(`${i+1}. ${c.porto} - ${c.portDistance.toFixed(0)}km - €${c.avgCost.toFixed(2)}/ton`);
                 });
                 
                 if (combosWithDistance.length > 0) {
                   bestOption = combosWithDistance[0];
-                  console.log('✓ PORTO SCELTO:', bestOption.porto);
+                  console.log('✓ PORTO SCELTO:', bestOption.porto, '-', bestOption.portDistance.toFixed(0), 'km');
                 } else {
                   alert('Impossibile calcolare la distanza dai porti');
                   setIsCalculating(false);
@@ -790,6 +885,52 @@
                       Foglio 1: {excelData.length} ordini • Foglio 2: {tariffarioData ? tariffarioData.length : 0} tariffe
                     </p>
                   </div>
+
+                  {suggestedDestinations.length > 0 && (
+                    <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-6">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-sm font-semibold text-blue-800">
+                          💡 Suggerimenti Tariffario
+                        </p>
+                        <button
+                          onClick={() => setSuggestedDestinations([])}
+                          className="text-xs text-blue-600 hover:text-blue-800"
+                        >
+                          Nascondi
+                        </button>
+                      </div>
+                      <p className="text-xs text-blue-700 mb-3">
+                        Queste destinazioni compaiono spesso (3+). Aggiungile al Foglio 2 per calcoli istantanei:
+                      </p>
+                      <div className="bg-white rounded p-3 max-h-60 overflow-y-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="border-b">
+                              <th className="text-left py-1 pr-2">Destinazione</th>
+                              <th className="text-left py-1 px-2">Tipo</th>
+                              <th className="text-center py-1 px-2">×</th>
+                              <th className="text-left py-1 px-2">Porto</th>
+                              <th className="text-right py-1 pl-2">Costo Medio</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {suggestedDestinations.map((s, i) => (
+                              <tr key={i} className="border-b hover:bg-gray-50">
+                                <td className="py-2 pr-2 text-gray-800">{s.destinazione}</td>
+                                <td className="py-2 px-2 text-gray-600">{s.modalita}</td>
+                                <td className="py-2 px-2 text-center font-semibold text-blue-600">{s.occorrenze}</td>
+                                <td className="py-2 px-2 text-gray-600">{s.portoComune}</td>
+                                <td className="py-2 pl-2 text-right font-semibold text-green-700">€{s.costoMedio}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <p className="text-xs text-blue-600 mt-2">
+                        📋 Copia questi valori nel Foglio 2: Porto | Destinazione | Tipo | Costo | Partner
+                      </p>
+                    </div>
+                  )}
 
                   <div className="space-y-6">
                     <div>
