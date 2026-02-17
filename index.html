@@ -300,9 +300,6 @@
             setSuggestedDestinations(suggestions);
           };
 
-          // Cache per coordinate per evitare chiamate ripetute
-          const coordsCache = {};
-
           const getCoordinates = async (address) => {
             // Controlla cache
             if (coordsCache[address]) {
