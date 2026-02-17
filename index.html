@@ -414,8 +414,20 @@
               }
               
               const combinations = {};
-              ordersToUse.forEach(order => {
+              console.log('=== CREAZIONE COMBINAZIONI ===');
+              console.log('Numero ordini da processare:', ordersToUse.length);
+              ordersToUse.forEach((order, idx) => {
+                console.log(`Ordine ${idx + 1}:`, {
+                  ordine: order.ORDINE,
+                  porto: order.PORTO,
+                  forwarder: order.FORWARDER,
+                  euroTon: order['€/TON'],
+                  destinazione: order.DESTINAZIONE
+                });
+                
                 const key = `${order.PORTO}|${order.FORWARDER}`;
+                console.log(`  Key creata: "${key}"`);
+                
                 if (!combinations[key]) {
                   combinations[key] = { 
                     porto: order.PORTO, 
@@ -423,12 +435,23 @@
                     costs: [],
                     destinations: []
                   };
+                  console.log(`  ✓ Nuova combinazione creata`);
                 }
                 combinations[key].costs.push(parseFloat(order['€/TON']));
                 if (!combinations[key].destinations.includes(order.DESTINAZIONE)) {
                   combinations[key].destinations.push(order.DESTINAZIONE);
                 }
               });
+              
+              console.log('Totale combinazioni create:', Object.keys(combinations).length);
+              console.log('Combinazioni:', Object.keys(combinations));
+              
+              // Verifica che ci siano combinazioni valide
+              if (Object.keys(combinations).length === 0) {
+                alert('Nessuna combinazione porto/forwarder trovata');
+                setIsCalculating(false);
+                return;
+              }
               
               const portCoords = {
                 'VENEZIA': { lat: 45.4408, lon: 12.3155 },
@@ -480,6 +503,10 @@
                 if (combosWithDistance.length > 0) {
                   bestOption = combosWithDistance[0];
                   console.log('✓ PORTO SCELTO:', bestOption.porto);
+                } else {
+                  alert('Impossibile calcolare la distanza dai porti');
+                  setIsCalculating(false);
+                  return;
                 }
                 
               } else {
@@ -490,6 +517,13 @@
                     bestOption = { ...combo, avgCost, numOrders: combo.costs.length };
                   }
                 });
+              }
+              
+              // Verifica finale che bestOption sia stato trovato
+              if (!bestOption) {
+                alert('Impossibile determinare la migliore opzione');
+                setIsCalculating(false);
+                return;
               }
               
               const ordersForChosen = ordersToUse.filter(order => 
