@@ -689,31 +689,95 @@
               
               const ton = parseFloat(tonnellate);
               
-              // Se usiamo il tariffario, calcolo semplificato
+              // Se usiamo il tariffario, calcolo ibrido: INLAND dal Foglio 2 + costi fissi medi dal Foglio 1
               if (useTariffario) {
-                console.log('=== DEBUG TARIFFARIO ===');
+                console.log('=== USO TARIFFARIO (SOLO INLAND) ===');
                 console.log('Riga tariffario trovata:', tariffarioMatch);
-                console.log('Valore COSTO raw:', tariffarioMatch['Costo']);
-                console.log('Valore PARTNER raw:', tariffarioMatch['Partner']);
-                console.log('Valore LUOGO DI PARTENZA raw:', tariffarioMatch['Luogo di Partenza']);
                 
-                const costoTrasporto = parseFloat(tariffarioMatch['Costo']);
+                const inlandTariffario = parseFloat(tariffarioMatch['Costo']);
                 const partner = tariffarioMatch['Partner'] || 'N/D';
-                const partenza = tariffarioMatch['Luogo di Partenza'] || 'N/D';
+                const porto = tariffarioMatch['Luogo di Partenza'] || 'N/D';
                 
-                console.log('Costo dopo parseFloat:', costoTrasporto);
-                console.log('Partner:', partner);
-                console.log('Partenza:', partenza);
+                console.log('INLAND da tariffario:', inlandTariffario);
+                
+                // Calcola costi fissi medi dal Foglio 1 per questa modalità e porto
+                const ordersForAvg = excelData.filter(order => 
+                  order["MODALITA'"] === modalita && 
+                  order.PORTO === porto.toUpperCase() &&
+                  order['€/TON']
+                );
+                
+                let avgCostiFissiPerTon = 0;
+                if (ordersForAvg.length > 0) {
+                  console.log(`Calcolo costi fissi medi da ${ordersForAvg.length} ordini ${modalita} da ${porto}`);
+                  
+                  let totalCostiFissiPerTon = 0;
+                  let count = 0;
+                  
+                  ordersForAvg.forEach(order => {
+                    const tons = parseFloat(order.TON || 0);
+                    if (tons <= 0) return;
+                    
+                    const freeOut = parseFloat(order['FREE OUT'] || 0);
+                    const deliveryOrder = parseFloat(order['DELIVERY ORDER'] || 0);
+                    const cicloTerminal = parseFloat(order['CICLO TERMINAL'] || 0);
+                    const dogana = parseFloat(order['DOGANA'] || 0);
+                    const dirittoFisso = parseFloat(order['DIRITTO FISSO'] || 0);
+                    const flegt = parseFloat(order['FLEGT'] || 0);
+                    const visitaMerce = parseFloat(order['VISITA MERCE'] || 0);
+                    const soste = parseFloat(order['SOSTE'] || 0);
+                    const svincolo = parseFloat(order['SVINCOLO'] || 0);
+                    
+                    const costiFissiTotali = freeOut + deliveryOrder + cicloTerminal + dogana + 
+                                           dirittoFisso + flegt + visitaMerce + soste + svincolo;
+                    
+                    totalCostiFissiPerTon += (costiFissiTotali / tons);
+                    count++;
+                  });
+                  
+                  avgCostiFissiPerTon = totalCostiFissiPerTon / count;
+                  console.log('Costi fissi medi:', avgCostiFissiPerTon.toFixed(2), '€/ton');
+                } else {
+                  // Fallback: usa media generale per la modalità
+                  const allOrdersMode = excelData.filter(o => o["MODALITA'"] === modalita && o['€/TON']);
+                  if (allOrdersMode.length > 0) {
+                    let total = 0;
+                    let count = 0;
+                    allOrdersMode.forEach(order => {
+                      const tons = parseFloat(order.TON || 0);
+                      if (tons <= 0) return;
+                      const euroTon = parseFloat(order['€/TON'] || 0);
+                      const inland = parseFloat(order['INLAND'] || 0);
+                      const costiFissiPerTon = euroTon - (inland / tons);
+                      if (costiFissiPerTon > 0) {
+                        total += costiFissiPerTon;
+                        count++;
+                      }
+                    });
+                    avgCostiFissiPerTon = count > 0 ? total / count : 30; // default 30€/ton
+                  } else {
+                    avgCostiFissiPerTon = 30; // Default generico
+                  }
+                  console.log('Costi fissi stimati (nessun ordine da questo porto):', avgCostiFissiPerTon.toFixed(2), '€/ton');
+                }
+                
+                const inlandPerTon = inlandTariffario / ton;
+                const costoTotalePerTon = avgCostiFissiPerTon + inlandPerTon;
+                
+                console.log('=== RIEPILOGO TARIFFARIO ===');
+                console.log(`Costi fissi: €${avgCostiFissiPerTon.toFixed(2)}/ton × ${ton} = €${(avgCostiFissiPerTon * ton).toFixed(2)}`);
+                console.log(`INLAND: €${inlandPerTon.toFixed(2)}/ton × ${ton} = €${inlandTariffario.toFixed(2)}`);
+                console.log(`TOTALE: €${(costoTotalePerTon * ton).toFixed(2)}`);
                 
                 setRisultato({
-                  porto: partenza,
+                  porto: porto,
                   forwarder: partner,
-                  costiFissi: '0.00',
-                  inland: costoTrasporto.toFixed(2),
-                  costoTotale: costoTrasporto.toFixed(2),
-                  costoPerTon: (costoTrasporto / ton).toFixed(2),
+                  costiFissi: (avgCostiFissiPerTon * ton).toFixed(2),
+                  inland: inlandTariffario.toFixed(2),
+                  costoTotale: (costoTotalePerTon * ton).toFixed(2),
+                  costoPerTon: costoTotalePerTon.toFixed(2),
                   tonnellate: ton,
-                  numOrdiniStorici: 0,
+                  numOrdiniStorici: ordersForAvg.length,
                   isEstimated: false,
                   isTariffario: true,
                   referenceDestinations: []
