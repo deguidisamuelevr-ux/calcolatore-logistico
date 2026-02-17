@@ -143,7 +143,7 @@
                 });
                 
                 // Almeno deve avere partenza, arrivo e costo
-                if (row['LUOGO DI PARTENZA'] && row['LUOGO DI ARRIVO'] && row['COSTO']) {
+                if (row['Luogo di Partenza'] && row['Luogo di arrivo'] && row['Costo']) {
                   data2.push(row);
                 }
               }
@@ -299,10 +299,24 @@
                 console.log('⚠️ Nessun match esatto, cerco nel tariffario...');
                 
                 if (tariffarioData && tariffarioData.length > 0) {
+                  console.log('=== RICERCA NEL TARIFFARIO ===');
+                  console.log('Destinazione cercata:', destinazione);
+                  console.log('Modalità cercata:', modalita);
+                  console.log('Totale righe tariffario:', tariffarioData.length);
+                  console.log('Prima riga tariffario (esempio):', tariffarioData[0]);
+                  console.log('Nomi colonne disponibili:', Object.keys(tariffarioData[0]));
+                  
                   // Cerca nel tariffario una corrispondenza di destinazione e tipologia
                   const tariffarioFiltered = tariffarioData.filter(t => {
-                    const arrivo = t['LUOGO DI ARRIVO'] || '';
-                    const tipologia = t['TIPOLOGIA'] || '';
+                    const arrivo = t['Luogo di arrivo'] || '';
+                    const tipologia = t['Tipologia'] || '';
+                    
+                    console.log('Controllo riga:', {
+                      arrivo: arrivo,
+                      tipologia: tipologia,
+                      arrivoMatch: arrivo.toLowerCase().trim() === destinazione.toLowerCase().trim(),
+                      tipologiaMatch: tipologia.toUpperCase() === modalita.toUpperCase()
+                    });
                     
                     // Normalizza confronto (case-insensitive, trim)
                     const arrivoMatch = arrivo.toLowerCase().trim() === destinazione.toLowerCase().trim();
@@ -360,9 +374,19 @@
               
               // Se usiamo il tariffario, calcolo semplificato
               if (useTariffario) {
-                const costoTrasporto = parseFloat(tariffarioMatch['COSTO']);
-                const partner = tariffarioMatch['PARTNER'] || 'N/D';
-                const partenza = tariffarioMatch['LUOGO DI PARTENZA'] || 'N/D';
+                console.log('=== DEBUG TARIFFARIO ===');
+                console.log('Riga tariffario trovata:', tariffarioMatch);
+                console.log('Valore COSTO raw:', tariffarioMatch['Costo']);
+                console.log('Valore PARTNER raw:', tariffarioMatch['Partner']);
+                console.log('Valore LUOGO DI PARTENZA raw:', tariffarioMatch['Luogo di Partenza']);
+                
+                const costoTrasporto = parseFloat(tariffarioMatch['Costo']);
+                const partner = tariffarioMatch['Partner'] || 'N/D';
+                const partenza = tariffarioMatch['Luogo di Partenza'] || 'N/D';
+                
+                console.log('Costo dopo parseFloat:', costoTrasporto);
+                console.log('Partner:', partner);
+                console.log('Partenza:', partenza);
                 
                 setRisultato({
                   porto: partenza,
