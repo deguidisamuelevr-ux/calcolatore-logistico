@@ -24,6 +24,7 @@
 
         const App = () => {
           const [excelData, setExcelData] = useState(null);
+          const [tariffarioData, setTariffarioData] = useState(null);
           const [destinazione, setDestinazione] = useState('');
           const [modalita, setModalita] = useState('');
           const [tonnellate, setTonnellate] = useState('');
@@ -34,7 +35,9 @@
           const [dataError, setDataError] = useState(false);
           const [errorMessage, setErrorMessage] = useState('');
 
-          const GOOGLE_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR-MthW0ItRfSSthoga_Tvd7w1_OMdDXZylZQhLjG5I0bk1cEGZjqPsFUt6I373L4oFpw156lvbvYHJ/pub?output=csv';
+          // URL per i due fogli
+          const FOGLIO1_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR-MthW0ItRfSSthoga_Tvd7w1_OMdDXZylZQhLjG5I0bk1cEGZjqPsFUt6I373L4oFpw156lvbvYHJ/pub?gid=0&single=true&output=csv';
+          const FOGLIO2_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR-MthW0ItRfSSthoga_Tvd7w1_OMdDXZylZQhLjG5I0bk1cEGZjqPsFUt6I373L4oFpw156lvbvYHJ/pub?gid=1817135869&single=true&output=csv';
 
           useEffect(() => {
             loadData();
@@ -65,32 +68,28 @@
             try {
               setIsLoading(true);
               setDataError(false);
-              console.log('Caricamento da:', GOOGLE_SHEET_CSV_URL);
-
-              const response = await fetch(GOOGLE_SHEET_CSV_URL);
               
-              if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-              }
+              // Carica Foglio 1 (consuntivi)
+              console.log('Caricamento Foglio 1:', FOGLIO1_CSV_URL);
+              const response1 = await fetch(FOGLIO1_CSV_URL);
+              if (!response1.ok) throw new Error(`HTTP ${response1.status} - Foglio 1`);
               
-              const csvText = await response.text();
-              console.log('CSV caricato, primi 500 caratteri:', csvText.substring(0, 500));
+              const csvText1 = await response1.text();
+              console.log('Foglio 1 caricato, primi 500 caratteri:', csvText1.substring(0, 500));
               
-              const lines = csvText.split('\n');
-              const headers = parseCSVLine(lines[0]);
+              const lines1 = csvText1.split('\n');
+              const headers1 = parseCSVLine(lines1[0]);
+              console.log('Headers Foglio 1:', headers1);
               
-              console.log('Headers:', headers);
-              
-              const data = [];
-              for (let i = 1; i < lines.length; i++) {
-                if (!lines[i].trim()) continue;
+              const data1 = [];
+              for (let i = 1; i < lines1.length; i++) {
+                if (!lines1[i].trim()) continue;
                 
-                const values = parseCSVLine(lines[i]);
+                const values = parseCSVLine(lines1[i]);
                 const row = {};
                 
-                headers.forEach((header, index) => {
+                headers1.forEach((header, index) => {
                   let value = values[index] || '';
-                  
                   const numValue = value.replace(',', '.');
                   if (!isNaN(numValue) && numValue !== '') {
                     row[header] = parseFloat(numValue);
@@ -99,19 +98,64 @@
                   }
                 });
                 
+                // FILTRO: Escludi righe con COMPLETO = "NO"
+                const completo = row.COMPLETO || '';
+                if (completo.toUpperCase() === 'NO') {
+                  console.log('Riga esclusa (COMPLETO=NO):', row.ORDINE);
+                  continue;
+                }
+                
                 if (row.ORDINE && row['€/TON']) {
-                  data.push(row);
+                  data1.push(row);
                 }
               }
               
-              console.log('Dati caricati:', data.length);
-              if (data.length > 0) {
-                console.log('Primo ordine:', data[0]);
-                console.log('Ultimo ordine:', data[data.length - 1]);
+              console.log('Foglio 1: dati caricati dopo filtro COMPLETO:', data1.length);
+              setExcelData(data1);
+              
+              // Carica Foglio 2 (tariffario trasporti)
+              console.log('Caricamento Foglio 2:', FOGLIO2_CSV_URL);
+              const response2 = await fetch(FOGLIO2_CSV_URL);
+              if (!response2.ok) throw new Error(`HTTP ${response2.status} - Foglio 2`);
+              
+              const csvText2 = await response2.text();
+              console.log('Foglio 2 caricato, primi 500 caratteri:', csvText2.substring(0, 500));
+              
+              const lines2 = csvText2.split('\n');
+              const headers2 = parseCSVLine(lines2[0]);
+              console.log('Headers Foglio 2:', headers2);
+              
+              const data2 = [];
+              for (let i = 1; i < lines2.length; i++) {
+                if (!lines2[i].trim()) continue;
+                
+                const values = parseCSVLine(lines2[i]);
+                const row = {};
+                
+                headers2.forEach((header, index) => {
+                  let value = values[index] || '';
+                  const numValue = value.replace(',', '.');
+                  if (!isNaN(numValue) && numValue !== '') {
+                    row[header] = parseFloat(numValue);
+                  } else {
+                    row[header] = value;
+                  }
+                });
+                
+                // Almeno deve avere partenza, arrivo e costo
+                if (row['LUOGO DI PARTENZA'] && row['LUOGO DI ARRIVO'] && row['COSTO']) {
+                  data2.push(row);
+                }
               }
               
-              setExcelData(data);
-              const dests = [...new Set(data.map(r => r.DESTINAZIONE).filter(Boolean))];
+              console.log('Foglio 2: tariffario caricato:', data2.length, 'righe');
+              if (data2.length > 0) {
+                console.log('Prima riga tariffario:', data2[0]);
+              }
+              setTariffarioData(data2);
+              
+              // Destinazioni disponibili dal Foglio 1
+              const dests = [...new Set(data1.map(r => r.DESTINAZIONE).filter(Boolean))];
               setAvailableDestinations(dests.sort());
               
             } catch (error) {
@@ -126,14 +170,13 @@
           const getCoordinates = async (address) => {
             const normalized = address.toLowerCase().trim();
             
-            // Database locale con coordinate precise
             const cities = {
               'milano': { lat: 45.4642, lon: 9.19 },
               'roma': { lat: 41.9028, lon: 12.4964 },
               'napoli': { lat: 40.8518, lon: 14.2681 },
               'verona': { lat: 45.4384, lon: 10.9916 },
               'brescia': { lat: 45.5416, lon: 10.2118 },
-              'oppeano': { lat: 45.316722, lon: 11.099167 }, // Coordinate precise corrette
+              'oppeano': { lat: 45.316722, lon: 11.099167 },
               'adro': { lat: 45.6167, lon: 9.9667 },
               'salerno': { lat: 40.6824, lon: 14.7681 },
               'bergamo': { lat: 45.6983, lon: 9.6773 },
@@ -164,8 +207,6 @@
               );
               const data = await response.json();
               if (data && data.length > 0) {
-                // Mantieni precisione usando Number() invece di parseFloat()
-                // e arrotonda a 6 decimali (sufficiente per ~11cm di precisione)
                 const lat = Number(Number(data[0].lat).toFixed(6));
                 const lon = Number(Number(data[0].lon).toFixed(6));
                 console.log(`Geocoded "${address}":`, { lat, lon });
@@ -179,7 +220,6 @@
 
           const calculateDistance = async (c1, c2) => {
             try {
-              // Usa OSRM per calcolare distanza stradale reale
               const url = `https://router.project-osrm.org/route/v1/driving/${c1.lon},${c1.lat};${c2.lon},${c2.lat}?overview=false`;
               const response = await fetch(url);
               
@@ -190,23 +230,19 @@
               const data = await response.json();
               
               if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
-                // Distanza in metri, converti in km
                 const distanceKm = data.routes[0].distance / 1000;
                 return distanceKm;
               } else {
-                // Fallback a Haversine se OSRM fallisce
                 console.warn('OSRM fallito, uso Haversine');
                 return calculateDistanceHaversine(c1, c2);
               }
             } catch (error) {
               console.error('Errore OSRM:', error);
-              // Fallback a Haversine
               return calculateDistanceHaversine(c1, c2);
             }
           };
           
           const calculateDistanceHaversine = (c1, c2) => {
-            // Formula di Haversine come fallback
             const R = 6371;
             const dLat = (c2.lat - c1.lat) * Math.PI / 180;
             const dLon = (c2.lon - c1.lon) * Math.PI / 180;
@@ -228,19 +264,16 @@
             try {
               console.log('=== INIZIO CALCOLO ===');
               console.log('Modalità richiesta:', modalita);
-              console.log('Totale ordini disponibili:', excelData.length);
+              console.log('Destinazione richiesta:', destinazione);
+              console.log('Totale ordini disponibili (Foglio 1):', excelData.length);
               
               const filtered = excelData.filter(r => {
                 const modalitaRow = r["MODALITA'"];
                 const hasEuroTon = r['€/TON'];
-                console.log('Ordine:', r.ORDINE, '- MODALITA\':', modalitaRow, '- Match:', modalitaRow === modalita, '- €/TON:', hasEuroTon);
                 return modalitaRow === modalita && hasEuroTon;
               });
               
               console.log('Ordini filtrati per modalità "' + modalita + '":', filtered.length);
-              if (filtered.length > 0) {
-                console.log('Primo ordine filtrato:', filtered[0]);
-              }
               
               if (filtered.length === 0) {
                 alert('Nessun ordine per questa modalità');
@@ -248,53 +281,114 @@
                 return;
               }
               
+              // Cerca match esatto nella destinazione
               const exact = filtered.filter(r => r.DESTINAZIONE === destinazione);
               
               let ordersToUse = [];
               let isEstimated = false;
               let referenceDestinations = [];
+              let useTariffario = false;
+              let tariffarioMatch = null;
               
               if (exact.length > 0) {
+                // Match esatto trovato nel Foglio 1
+                console.log('✓ Match esatto trovato nel Foglio 1');
                 ordersToUse = exact;
               } else {
-                isEstimated = true;
-                const targetCoords = await getCoordinates(destinazione);
+                // Nessun match esatto: cerca nel tariffario (Foglio 2)
+                console.log('⚠️ Nessun match esatto, cerco nel tariffario...');
                 
-                if (!targetCoords) {
-                  alert('Impossibile trovare la destinazione');
-                  setIsCalculating(false);
-                  return;
-                }
-                
-                const destsWithDist = [];
-                for (const row of filtered) {
-                  const coords = await getCoordinates(row.DESTINAZIONE);
-                  if (coords) {
-                    const distance = await calculateDistance(targetCoords, coords);
-                    destsWithDist.push({
-                      destination: row.DESTINAZIONE,
-                      distance: distance
-                    });
+                if (tariffarioData && tariffarioData.length > 0) {
+                  // Cerca nel tariffario una corrispondenza di destinazione e tipologia
+                  const tariffarioFiltered = tariffarioData.filter(t => {
+                    const arrivo = t['LUOGO DI ARRIVO'] || '';
+                    const tipologia = t['TIPOLOGIA'] || '';
+                    
+                    // Normalizza confronto (case-insensitive, trim)
+                    const arrivoMatch = arrivo.toLowerCase().trim() === destinazione.toLowerCase().trim();
+                    const tipologiaMatch = tipologia.toUpperCase() === modalita.toUpperCase();
+                    
+                    return arrivoMatch && tipologiaMatch;
+                  });
+                  
+                  console.log('Tariffario: trovate', tariffarioFiltered.length, 'corrispondenze');
+                  
+                  if (tariffarioFiltered.length > 0) {
+                    // Usa il tariffario
+                    useTariffario = true;
+                    tariffarioMatch = tariffarioFiltered[0]; // Prendi la prima corrispondenza
+                    console.log('✓ Uso tariffario:', tariffarioMatch);
                   }
                 }
                 
-                destsWithDist.sort((a, b) => a.distance - b.distance);
-                const nearest = destsWithDist.slice(0, 5);
-                referenceDestinations = nearest;
-                
-                nearest.forEach(nd => {
-                  const orders = filtered.filter(r => r.DESTINAZIONE === nd.destination);
-                  ordersToUse.push(...orders);
-                });
+                if (!useTariffario) {
+                  // Fallback: stima basata su destinazioni vicine (logica originale)
+                  console.log('⚠️ Nessun match nel tariffario, stimo da destinazioni vicine...');
+                  isEstimated = true;
+                  const targetCoords = await getCoordinates(destinazione);
+                  
+                  if (!targetCoords) {
+                    alert('Impossibile trovare la destinazione');
+                    setIsCalculating(false);
+                    return;
+                  }
+                  
+                  const destsWithDist = [];
+                  for (const row of filtered) {
+                    const coords = await getCoordinates(row.DESTINAZIONE);
+                    if (coords) {
+                      const distance = await calculateDistance(targetCoords, coords);
+                      destsWithDist.push({
+                        destination: row.DESTINAZIONE,
+                        distance: distance
+                      });
+                    }
+                  }
+                  
+                  destsWithDist.sort((a, b) => a.distance - b.distance);
+                  const nearest = destsWithDist.slice(0, 5);
+                  referenceDestinations = nearest;
+                  
+                  nearest.forEach(nd => {
+                    const orders = filtered.filter(r => r.DESTINAZIONE === nd.destination);
+                    ordersToUse.push(...orders);
+                  });
+                }
               }
               
+              const ton = parseFloat(tonnellate);
+              
+              // Se usiamo il tariffario, calcolo semplificato
+              if (useTariffario) {
+                const costoTrasporto = parseFloat(tariffarioMatch['COSTO']);
+                const partner = tariffarioMatch['PARTNER'] || 'N/D';
+                const partenza = tariffarioMatch['LUOGO DI PARTENZA'] || 'N/D';
+                
+                setRisultato({
+                  porto: partenza,
+                  forwarder: partner,
+                  costiFissi: '0.00',
+                  inland: costoTrasporto.toFixed(2),
+                  costoTotale: costoTrasporto.toFixed(2),
+                  costoPerTon: (costoTrasporto / ton).toFixed(2),
+                  tonnellate: ton,
+                  numOrdiniStorici: 0,
+                  isEstimated: false,
+                  isTariffario: true,
+                  referenceDestinations: []
+                });
+                
+                setIsCalculating(false);
+                return;
+              }
+              
+              // Altrimenti, logica originale con ordini storici
               if (ordersToUse.length === 0) {
                 alert('Nessun ordine trovato');
                 setIsCalculating(false);
                 return;
               }
               
-              // Raggruppa per porto+forwarder
               const combinations = {};
               ordersToUse.forEach(order => {
                 const key = `${order.PORTO}|${order.FORWARDER}`;
@@ -312,7 +406,6 @@
                 }
               });
               
-              // Definisci coordinate porti (disponibile per tutto il calcolo)
               const portCoords = {
                 'VENEZIA': { lat: 45.4408, lon: 12.3155 },
                 'TRIESTE': { lat: 45.6495, lon: 13.7768 },
@@ -324,17 +417,13 @@
                 'CIVITAVECCHIA': { lat: 42.0938, lon: 11.7967 }
               };
               
-              // Se è una stima, calcola distanza dei porti dalla destinazione target
               let bestOption = null;
               let lowestCost = Infinity;
               
               if (isEstimated) {
                 const targetCoords = await getCoordinates(destinazione);
                 console.log('=== CALCOLO DISTANZE PORTI ===');
-                console.log('Destinazione richiesta:', destinazione);
-                console.log('Coordinate destinazione:', targetCoords);
                 
-                // Per ogni combinazione, calcola distanza del porto
                 const combosWithDistance = [];
                 for (const combo of Object.values(combinations)) {
                   const avgCost = combo.costs.reduce((a, b) => a + b, 0) / combo.costs.length;
@@ -355,32 +444,21 @@
                       numOrders: combo.costs.length,
                       portDistance: distance
                     });
-                  } else {
-                    console.log(`Porto ${combo.porto}: coordinate non trovate`);
                   }
                 }
                 
-                console.log('--- Ordinamento porti ---');
-                // Ordina per distanza porto, poi per costo
                 combosWithDistance.sort((a, b) => {
-                  // Prima criterio: distanza porto (peso maggiore)
                   const distDiff = a.portDistance - b.portDistance;
-                  if (Math.abs(distDiff) > 100) return distDiff; // Se differenza >100km, conta molto
-                  // Secondo criterio: costo
+                  if (Math.abs(distDiff) > 100) return distDiff;
                   return a.avgCost - b.avgCost;
-                });
-                
-                combosWithDistance.forEach((c, i) => {
-                  console.log(`${i+1}. ${c.porto} - ${c.portDistance.toFixed(0)}km - €${c.avgCost.toFixed(2)}/ton`);
                 });
                 
                 if (combosWithDistance.length > 0) {
                   bestOption = combosWithDistance[0];
-                  console.log('✓ PORTO SCELTO:', bestOption.porto, '-', bestOption.portDistance.toFixed(0), 'km');
+                  console.log('✓ PORTO SCELTO:', bestOption.porto);
                 }
                 
               } else {
-                // Match esatto: scegli solo per costo
                 Object.values(combinations).forEach(combo => {
                   const avgCost = combo.costs.reduce((a, b) => a + b, 0) / combo.costs.length;
                   if (avgCost < lowestCost) {
@@ -390,20 +468,10 @@
                 });
               }
               
-              const ton = parseFloat(tonnellate);
-              
-              // Calcola costi medi SOLO per il porto scelto e il forwarder scelto
-              console.log('=== CALCOLO COSTI DETTAGLIATO ===');
-              console.log('Porto scelto:', bestOption.porto);
-              console.log('Forwarder scelto:', bestOption.forwarder);
-              
-              // Filtra ordini del porto+forwarder scelto
               const ordersForChosen = ordersToUse.filter(order => 
                 order.PORTO === bestOption.porto && 
                 order.FORWARDER === bestOption.forwarder
               );
-              
-              console.log('Ordini per porto+forwarder scelto:', ordersForChosen.length);
               
               let totalCostiFissi = 0;
               let totalInland = 0;
@@ -421,22 +489,8 @@
                 const svincolo = parseFloat(order['SVINCOLO'] || 0);
                 const inland = parseFloat(order['INLAND'] || 0);
                 
-                // Costi fissi = tutti i costi TRANNE inland
                 const costiFissi = freeOut + deliveryOrder + cicloTerminal + dogana + 
                                    dirittoFisso + flegt + visitaMerce + soste + svincolo;
-                
-                console.log(`Ordine ${idx+1} (${order.ORDINE}) - ${order.DESTINAZIONE}`);
-                console.log('  Costi fissi:', costiFissi.toFixed(2), 
-                           '(FREE OUT:', freeOut, 
-                           '+ DELIVERY:', deliveryOrder,
-                           '+ CICLO:', cicloTerminal, 
-                           '+ DOGANA:', dogana,
-                           '+ DIRITTO:', dirittoFisso,
-                           '+ FLEGT:', flegt,
-                           '+ VISITA:', visitaMerce,
-                           '+ SOSTE:', soste,
-                           '+ SVINCOLO:', svincolo, ')');
-                console.log('  INLAND:', inland.toFixed(2));
                 
                 totalCostiFissi += costiFissi;
                 totalInland += inland;
@@ -450,12 +504,10 @@
               console.log('MEDIA Costi Fissi:', avgCostiFissi.toFixed(2), '€');
               console.log('MEDIA INLAND:', avgInland.toFixed(2), '€');
               
-              // Se è una stima, aggiusta l'INLAND in base alla distanza
               let adjustedInland = avgInland;
               if (isEstimated && referenceDestinations.length > 0) {
                 const targetCoords = await getCoordinates(destinazione);
                 
-                // Calcola distanza media del porto scelto dalle sue destinazioni storiche
                 let avgPortDistToRef = 0;
                 let countDistances = 0;
                 
@@ -472,26 +524,21 @@
                 if (countDistances > 0) {
                   avgPortDistToRef = avgPortDistToRef / countDistances;
                   
-                  // Calcola distanza porto dalla destinazione target
                   const portCoord = portCoords[bestOption.porto.toUpperCase()];
                   if (portCoord && targetCoords) {
                     const portDistToTarget = await calculateDistance(portCoord, targetCoords);
-                    
-                    // Aggiusta INLAND proporzionalmente alla differenza di distanza
                     const distanceRatio = portDistToTarget / avgPortDistToRef;
                     adjustedInland = avgInland * distanceRatio;
                     
                     console.log('=== STIMA INLAND ===');
-                    console.log('INLAND medio storico (porto', bestOption.porto + '):', avgInland.toFixed(2), '€');
+                    console.log('INLAND medio storico:', avgInland.toFixed(2), '€');
                     console.log('Distanza media porto→destinazioni storiche:', avgPortDistToRef.toFixed(0), 'km');
                     console.log('Distanza porto→target:', portDistToTarget.toFixed(0), 'km');
-                    console.log('Ratio distanze:', distanceRatio.toFixed(2));
                     console.log('INLAND stimato:', adjustedInland.toFixed(2), '€');
                   }
                 }
               }
               
-              const costoTotalePerTon = (avgCostiFissi + adjustedInland) / ton;
               const costoTotale = avgCostiFissi + adjustedInland;
               
               setRisultato({
@@ -504,6 +551,7 @@
                 tonnellate: ton,
                 numOrdiniStorici: bestOption.numOrders,
                 isEstimated: isEstimated,
+                isTariffario: false,
                 referenceDestinations: referenceDestinations
               });
               
@@ -554,7 +602,10 @@
 
                   <div className="bg-green-50 border-l-4 border-green-500 p-4 mb-6">
                     <p className="text-sm text-green-800">
-                      <strong>✓ Connesso</strong> - {excelData.length} ordini caricati
+                      <strong>✓ Connesso</strong>
+                    </p>
+                    <p className="text-xs text-green-700 mt-1">
+                      Foglio 1: {excelData.length} ordini • Foglio 2: {tariffarioData ? tariffarioData.length : 0} tariffe
                     </p>
                   </div>
 
@@ -614,7 +665,15 @@
 
                 {risultato && (
                   <div className="bg-white rounded-2xl shadow-xl p-8">
-                    {risultato.isEstimated && (
+                    {risultato.isTariffario && (
+                      <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-6">
+                        <p className="text-sm text-blue-800">
+                          <strong>📋 Tariffario</strong> - Costo da tariffario trasporti
+                        </p>
+                      </div>
+                    )}
+                    
+                    {risultato.isEstimated && !risultato.isTariffario && (
                       <div className="bg-amber-50 border-l-4 border-amber-500 p-4 mb-6">
                         <p className="text-sm text-amber-800">
                           <strong>⚠️ Stima</strong> - Basata su {risultato.referenceDestinations.length} destinazioni vicine
@@ -629,11 +688,11 @@
 
                     <div className="grid md:grid-cols-2 gap-4 mb-6">
                       <div className="bg-indigo-50 p-6 rounded-xl">
-                        <p className="text-sm text-gray-600">Porto</p>
+                        <p className="text-sm text-gray-600">{risultato.isTariffario ? 'Partenza' : 'Porto'}</p>
                         <p className="text-2xl font-bold text-indigo-700">{risultato.porto}</p>
                       </div>
                       <div className="bg-indigo-50 p-6 rounded-xl">
-                        <p className="text-sm text-gray-600">Forwarder</p>
+                        <p className="text-sm text-gray-600">{risultato.isTariffario ? 'Partner' : 'Forwarder'}</p>
                         <p className="text-2xl font-bold text-indigo-700">{risultato.forwarder}</p>
                       </div>
                     </div>
@@ -641,12 +700,16 @@
                     <div className="bg-green-50 p-6 rounded-xl mb-6">
                       <h3 className="font-semibold text-gray-700 mb-4">Riepilogo Costi</h3>
                       <div className="space-y-3">
+                        {!risultato.isTariffario && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600">Costi Fissi (porto + dogana + servizi)</span>
+                            <span className="text-lg font-bold text-gray-800">€{risultato.costiFissi}</span>
+                          </div>
+                        )}
                         <div className="flex justify-between items-center">
-                          <span className="text-sm text-gray-600">Costi Fissi (porto + dogana + servizi)</span>
-                          <span className="text-lg font-bold text-gray-800">€{risultato.costiFissi}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm text-gray-600">Inland (trasporto {risultato.porto} → destinazione)</span>
+                          <span className="text-sm text-gray-600">
+                            {risultato.isTariffario ? 'Costo Trasporto' : `Inland (trasporto ${risultato.porto} → destinazione)`}
+                          </span>
                           <span className="text-lg font-bold text-gray-800">€{risultato.inland}</span>
                         </div>
                         <div className="border-t-2 border-green-200 pt-3 mt-3">
@@ -665,7 +728,9 @@
                       </div>
                     </div>
 
-                    <p className="text-sm text-gray-500 mt-4">Basato su {risultato.numOrdiniStorici} ordini</p>
+                    {!risultato.isTariffario && risultato.numOrdiniStorici > 0 && (
+                      <p className="text-sm text-gray-500 mt-4">Basato su {risultato.numOrdiniStorici} ordini storici</p>
+                    )}
                   </div>
                 )}
               </div>
