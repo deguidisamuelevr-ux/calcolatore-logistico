@@ -1,1263 +1,1681 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Calcolo Costi Logistici</title>
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LogisticAI v3 — Previsione Costi</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0a0a0f; --surface: #12121a; --surface2: #1a1a26; --border: #2a2a3d;
+      --accent: #00e5a0; --accent2: #7c6af7; --accent3: #f7a06a;
+      --warn: #f7d06a; --danger: #f76a6a; --text: #e8e8f0; --text2: #8888aa;
+      --font-d: 'Syne', sans-serif; --font-m: 'DM Mono', monospace;
+    }
+    body { background: var(--bg); color: var(--text); font-family: var(--font-m); min-height: 100vh; overflow-x: hidden; }
+    body::before {
+      content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background-image: linear-gradient(rgba(0,229,160,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,229,160,0.025) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+    #root { position: relative; z-index: 1; }
+
+    .shell { max-width: 1000px; margin: 0 auto; padding: 32px 20px 100px; }
+
+    /* HEADER */
+    .header { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 40px; padding-bottom: 24px; border-bottom: 1px solid var(--border); }
+    .logo { font-family: var(--font-d); font-size: 2rem; font-weight: 800; letter-spacing: -0.03em; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .logo-sub { font-size: 0.7rem; color: var(--text2); letter-spacing: 0.15em; text-transform: uppercase; margin-top: 4px; }
+    .status-pill { display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 100px; padding: 8px 16px; font-size: 0.72rem; color: var(--text2); }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse 2s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+    /* TABS */
+    .tabs { display: flex; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 4px; margin-bottom: 20px; }
+    .tab-btn { flex: 1; padding: 10px 12px; border: none; border-radius: 9px; background: transparent; color: var(--text2); font-family: var(--font-m); font-size: 0.78rem; cursor: pointer; transition: all .2s; letter-spacing: 0.05em; }
+    .tab-btn.active { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+    .tab-btn:hover:not(.active) { color: var(--text); }
+
+    /* CARDS */
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 24px; margin-bottom: 16px; position: relative; overflow: hidden; }
+    .card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, var(--accent2), transparent); opacity: 0.35; }
+    .card-title { font-family: var(--font-d); font-size: 0.72rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text2); margin-bottom: 18px; display: flex; align-items: center; gap: 10px; }
+    .card-title-line { flex: 1; height: 1px; background: var(--border); }
+
+    /* MODEL STATS */
+    .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+    @media(max-width:640px){ .stat-row { grid-template-columns: repeat(2,1fr); } }
+    .stat-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+    .stat-label { font-size: 0.63rem; color: var(--text2); letter-spacing: 0.08em; text-transform: uppercase; }
+    .stat-value { font-family: var(--font-d); font-size: 1.35rem; font-weight: 700; margin-top: 4px; }
+    .stat-sub { font-size: 0.63rem; color: var(--text2); margin-top: 2px; }
+
+    /* FORM */
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    @media(max-width:580px){ .form-grid { grid-template-columns: 1fr; } }
+    .field { display: flex; flex-direction: column; gap: 7px; }
+    .field-label { font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text2); }
+    .field input, .field select {
+      background: var(--surface2); border: 1px solid var(--border); border-radius: 10px;
+      color: var(--text); font-family: var(--font-m); font-size: 0.92rem;
+      padding: 11px 14px; outline: none; transition: border-color .2s, box-shadow .2s; width: 100%;
+    }
+    .field input:focus, .field select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,229,160,.1); }
+    .field select option { background: var(--surface2); }
+    .field-hint { font-size: 0.63rem; color: var(--text2); }
+
+    /* BUTTONS */
+    .btn-primary {
+      width: 100%; margin-top: 18px; padding: 15px;
+      background: linear-gradient(135deg, var(--accent), #00b87a);
+      border: none; border-radius: 12px; color: #000;
+      font-family: var(--font-d); font-size: 0.95rem; font-weight: 700;
+      cursor: pointer; transition: opacity .2s, transform .15s;
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+    }
+    .btn-primary:hover:not(:disabled) { opacity: .88; transform: translateY(-1px); }
+    .btn-primary:disabled { background: var(--border); color: var(--text2); cursor: not-allowed; transform: none; }
+    .btn-secondary {
+      padding: 8px 16px; background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text2); font-family: var(--font-m); font-size: 0.75rem;
+      cursor: pointer; transition: all .2s;
+    }
+    .btn-secondary:hover { border-color: var(--accent2); color: var(--text); }
+
+    /* RESULT HERO */
+    .result-hero {
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 20px;
+      background: var(--surface2); border: 1px solid var(--accent); border-radius: 14px;
+      padding: 24px 28px; margin-bottom: 16px; box-shadow: 0 0 40px rgba(0,229,160,.07);
+    }
+    .result-main-label { font-size: 0.68rem; color: var(--text2); letter-spacing: 0.1em; text-transform: uppercase; }
+    .result-main-value { font-family: var(--font-d); font-size: 2.8rem; font-weight: 800; color: var(--accent); line-height: 1; margin-top: 4px; }
+    .result-main-sub { font-size: 0.78rem; color: var(--text2); margin-top: 6px; }
+    .ci-block { text-align: right; }
+    .ci-label { font-size: 0.63rem; color: var(--text2); margin-bottom: 6px; }
+    .ci-range { font-family: var(--font-d); font-size: 0.95rem; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+    .ci-bar { height: 6px; background: var(--border); border-radius: 3px; position: relative; overflow: hidden; width: 200px; }
+    .ci-fill { position: absolute; height: 100%; background: linear-gradient(90deg, var(--accent2), var(--accent)); border-radius: 3px; }
+
+    /* BREAKDOWN GRID */
+    .breakdown-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 16px; }
+    @media(max-width:600px){ .breakdown-grid { grid-template-columns: repeat(2,1fr); } }
+    .breakdown-item { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+    .b-label { font-size: 0.62rem; color: var(--text2); text-transform: uppercase; letter-spacing: .07em; }
+    .b-value { font-family: var(--font-d); font-size: 1.25rem; font-weight: 700; margin-top: 4px; }
+    .b-sub { font-size: 0.63rem; color: var(--text2); margin-top: 3px; }
+
+    /* ALERTS */
+    .alert { border-radius: 10px; padding: 12px 16px; margin-bottom: 12px; font-size: 0.8rem; display: flex; gap: 10px; align-items: flex-start; border: 1px solid; }
+    .alert-warn { background: rgba(247,208,106,.07); border-color: rgba(247,208,106,.3); color: var(--warn); }
+    .alert-danger { background: rgba(247,106,106,.07); border-color: rgba(247,106,106,.3); color: var(--danger); }
+    .alert-info { background: rgba(124,106,247,.07); border-color: rgba(124,106,247,.3); color: var(--accent2); }
+    .alert-ok { background: rgba(0,229,160,.07); border-color: rgba(0,229,160,.3); color: var(--accent); }
+    .alert-icon { font-size: 1rem; flex-shrink: 0; }
+    .alert-text { line-height: 1.5; }
+
+    /* ANOMALY LIST */
+    .anomaly-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid rgba(42,42,61,.5); font-size: 0.8rem; }
+    .anomaly-row:last-child { border-bottom: none; }
+    .anomaly-badge { padding: 2px 8px; border-radius: 4px; font-size: 0.65rem; font-weight: 600; }
+    .badge-high { background: rgba(247,106,106,.15); color: var(--danger); }
+    .badge-low { background: rgba(0,229,160,.15); color: var(--accent); }
+    .badge-ok { background: rgba(124,106,247,.15); color: var(--accent2); }
+
+    /* PORT TABLE */
+    .port-table { width: 100%; border-collapse: collapse; }
+    .port-table th { font-size: 0.63rem; letter-spacing: .1em; text-transform: uppercase; color: var(--text2); padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+    .port-table td { padding: 11px 12px; font-size: 0.82rem; border-bottom: 1px solid rgba(42,42,61,.4); }
+    .port-table tr.best-row td { background: rgba(0,229,160,.04); }
+    .port-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.63rem; font-weight: 600; }
+
+    /* TREND / FORECAST */
+    .trend-chart { position: relative; height: 90px; }
+    .trend-svg { width: 100%; height: 100%; overflow: visible; }
+    .forecast-zone { fill: rgba(124,106,247,.08); stroke: rgba(124,106,247,.3); stroke-width: 1; stroke-dasharray: 4,3; }
+
+    /* OPTIMIZER */
+    .opt-matrix { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px,1fr)); gap: 10px; }
+    .opt-cell { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 12px; transition: border-color .2s; }
+    .opt-cell.opt-best { border-color: var(--accent); box-shadow: 0 0 20px rgba(0,229,160,.1); }
+    .opt-cell.opt-second { border-color: rgba(124,106,247,.5); }
+    .opt-cell-port { font-size: 0.7rem; font-weight: 700; color: var(--text2); letter-spacing: .05em; }
+    .opt-cell-cost { font-family: var(--font-d); font-size: 1.1rem; font-weight: 700; margin: 4px 0 2px; }
+    .opt-cell-detail { font-size: 0.62rem; color: var(--text2); line-height: 1.5; }
+    .opt-score-bar { height: 3px; background: var(--border); border-radius: 2px; margin-top: 8px; }
+    .opt-score-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, var(--accent2), var(--accent)); }
+
+    /* AI BOX */
+    .ai-box { background: linear-gradient(135deg, rgba(124,106,247,.08), rgba(0,229,160,.04)); border: 1px solid rgba(124,106,247,.3); border-radius: 14px; padding: 20px 24px; }
+    .ai-header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+    .ai-badge { background: linear-gradient(135deg, var(--accent2), var(--accent)); border-radius: 6px; padding: 3px 10px; font-size: 0.63rem; font-weight: 700; letter-spacing: .1em; color: #fff; }
+    .ai-text { font-size: 0.86rem; line-height: 1.75; color: var(--text); white-space: pre-wrap; }
+    .thinking { display: flex; align-items: center; gap: 10px; color: var(--text2); font-size: 0.8rem; }
+    .dots span { animation: blink 1.2s ease-in-out infinite; display: inline-block; }
+    .dots span:nth-child(2){ animation-delay:.2s } .dots span:nth-child(3){ animation-delay:.4s }
+    @keyframes blink { 0%,80%,100%{opacity:.2} 40%{opacity:1} }
+
+    /* LOADING */
+    .loading-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .spinner { width: 40px; height: 40px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .train-bar-wrap { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; margin-top: 14px; width: 260px; }
+    .train-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent2), var(--accent)); border-radius: 2px; transition: width .3s ease; }
+
+    .fade-in { animation: fadeIn .4s ease forwards; }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:none} }
+    .text-accent{color:var(--accent)} .text-accent2{color:var(--accent2)} .text-warn{color:var(--warn)} .text-danger{color:var(--danger)} .text-muted{color:var(--text2)}
+    .divider { height: 1px; background: var(--border); margin: 16px 0; }
+
+    /* SOSTA */
+    .sosta-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px,1fr)); gap: 10px; margin-bottom: 16px; }
+    .sosta-cell { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+    .sosta-cell.sosta-warn { border-color: rgba(247,208,106,0.4); background: rgba(247,208,106,0.05); }
+    .sosta-cell.sosta-danger { border-color: rgba(247,106,106,0.4); background: rgba(247,106,106,0.05); }
+    .sosta-cell.sosta-ok { border-color: rgba(0,229,160,0.3); background: rgba(0,229,160,0.04); }
+    .sosta-dest { font-size: 0.7rem; font-weight: 700; color: var(--text); margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sosta-days { font-family: var(--font-d); font-size: 1.4rem; font-weight: 800; line-height: 1; margin: 4px 0 2px; }
+    .sosta-detail { font-size: 0.62rem; color: var(--text2); line-height: 1.5; }
+    .sosta-bar { height: 3px; background: var(--border); border-radius: 2px; margin-top: 8px; }
+    .sosta-bar-fill { height: 100%; border-radius: 2px; }
+    .sosta-alert-inline {
+      display: flex; align-items: flex-start; gap: 12px;
+      background: rgba(247,160,106,0.07); border: 1px solid rgba(247,160,106,0.3);
+      border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; font-size: 0.82rem; color: var(--accent3);
+    }
+  </style>
 </head>
 <body>
-    <div id="root"></div>
-    <script type="text/babel">
-        const { useState, useEffect } = React;
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback, useMemo } = React;
 
-        const Calculator = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/></svg>;
-        const TrendingDown = () => <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>;
-        const Package = () => <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>;
-        const Truck = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="3" width="15" height="13"/><circle cx="5.5" cy="18.5" r="2.5"/></svg>;
-        const MapPin = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>;
-        const AlertCircle = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/></svg>;
-        const Loader = () => <svg className="animate-spin" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/></svg>;
+/* ═══════════════════════════════════════════════════
+   CSV & NUMBER PARSING
+═══════════════════════════════════════════════════ */
+function parseCSVLine(line) {
+  const result = []; let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') { inQ = !inQ; }
+    else if (c === ',' && !inQ) { result.push(cur.trim()); cur = ''; }
+    else { cur += c; }
+  }
+  result.push(cur.trim()); return result;
+}
 
-        const App = () => {
-          const [excelData, setExcelData] = useState(null);
-          const [tariffarioData, setTariffarioData] = useState(null);
-          const [destinazione, setDestinazione] = useState('');
-          const [modalita, setModalita] = useState('');
-          const [tonnellate, setTonnellate] = useState('');
-          const [risultato, setRisultato] = useState(null);
-          const [availableDestinations, setAvailableDestinations] = useState([]);
-          const [suggestedDestinations, setSuggestedDestinations] = useState([]);
-          const [isCalculating, setIsCalculating] = useState(false);
-          const [isLoading, setIsLoading] = useState(true);
-          const [dataError, setDataError] = useState(false);
-          const [errorMessage, setErrorMessage] = useState('');
+function parseNum(value) {
+  let v = (value || '').replace(/€/g,'').replace(/\s/g,'').trim();
+  if (v.includes(',') && v.includes('.')) v = v.replace(/\./g,'').replace(',','.');
+  else if (v.includes(',')) v = v.replace(',','.');
+  else if (v.includes('.')) { const p = v.split('.'); if (p.length===2 && p[1].length===3) v = v.replace('.',''); }
+  return !isNaN(v) && v !== '' ? parseFloat(v) : null;
+}
 
-          // URL per i due fogli
-          const FOGLIO1_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR-MthW0ItRfSSthoga_Tvd7w1_OMdDXZylZQhLjG5I0bk1cEGZjqPsFUt6I373L4oFpw156lvbvYHJ/pub?gid=0&single=true&output=csv';
-          const FOGLIO2_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR-MthW0ItRfSSthoga_Tvd7w1_OMdDXZylZQhLjG5I0bk1cEGZjqPsFUt6I373L4oFpw156lvbvYHJ/pub?gid=738284096&single=true&output=csv';
+function parseDate(str) {
+  if (!str || typeof str !== 'string') return null;
+  str = str.trim();
+  let d;
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(str)) {
+    const parts = str.split('/');
+    // Prova dd/mm/yyyy
+    d = new Date(+parts[2], +parts[1]-1, +parts[0]);
+    if (isNaN(d.getTime())) d = new Date(+parts[2], +parts[0]-1, +parts[1]);
+  } else if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
+    d = new Date(str);
+  } else {
+    d = new Date(str);
+  }
+  return isNaN(d?.getTime()) ? null : d;
+}
 
-          useEffect(() => {
-            loadData();
-          }, []);
+async function loadCSV(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const text = await r.text();
+  const lines = text.split('\n').filter(l => l.trim());
+  const headers = parseCSVLine(lines[0]);
+  return lines.slice(1).map(line => {
+    const vals = parseCSVLine(line);
+    const row = {};
+    headers.forEach((h, i) => {
+      const raw = vals[i] || '';
+      const n = parseNum(raw);
+      row[h.trim()] = n !== null ? n : raw;
+    });
+    return row;
+  });
+}
 
-          const parseCSVLine = (line) => {
-            const result = [];
-            let current = '';
-            let inQuotes = false;
-            
-            for (let i = 0; i < line.length; i++) {
-              const char = line[i];
-              
-              if (char === '"') {
-                inQuotes = !inQuotes;
-                // Non aggiungere le virgolette al valore
-              } else if (char === ',' && !inQuotes) {
-                result.push(current.trim());
-                current = '';
-              } else {
-                current += char;
-              }
-            }
-            result.push(current.trim());
-            return result;
-          };
+/* ═══════════════════════════════════════════════════
+   GEO
+═══════════════════════════════════════════════════ */
+const CITY_COORDS = {
+  'milano':[45.4642,9.19],'torino':[45.0703,7.6869],'genova':[44.4056,8.9463],
+  'venezia':[45.4408,12.3155],'verona':[45.4384,10.9916],'padova':[45.4064,11.8768],
+  'vicenza':[45.5455,11.5354],'treviso':[45.6669,12.243],'trieste':[45.6495,13.7768],
+  'udine':[46.0623,13.2345],'bologna':[44.4949,11.3426],'modena':[44.6471,10.9252],
+  'parma':[44.8015,10.3279],'reggio emilia':[44.6989,10.6297],'piacenza':[45.0526,9.6924],
+  'rimini':[44.0678,12.5695],'ravenna':[44.4184,12.2035],'ferrara':[44.8381,11.6198],
+  'firenze':[43.7696,11.2558],'prato':[43.8777,11.0955],'livorno':[43.5485,10.3106],
+  'pisa':[43.7228,10.4017],'arezzo':[43.4632,11.8796],'siena':[43.3188,11.3308],
+  'lucca':[43.8376,10.495],'pistoia':[43.933,10.9177],'massa':[44.0366,10.1411],
+  'roma':[41.9028,12.4964],'latina':[41.4677,12.9036],'frosinone':[41.64,13.3405],
+  'viterbo':[42.4208,12.1078],'civitavecchia':[42.0938,11.7967],'perugia':[43.1122,12.3888],
+  'ancona':[43.6158,13.5189],'pescara':[42.4584,14.2042],'napoli':[40.8518,14.2681],
+  'salerno':[40.6824,14.7681],'caserta':[41.0732,14.3328],'benevento':[41.1297,14.7826],
+  'avellino':[40.9145,14.7906],'bari':[41.1171,16.8719],'taranto':[40.4738,17.2405],
+  'foggia':[41.4621,15.5447],'lecce':[40.3515,18.175],'brindisi':[40.6327,17.9419],
+  'potenza':[40.6389,15.8056],'matera':[40.6664,16.6043],'cosenza':[39.2979,16.2523],
+  'reggio calabria':[38.1113,15.6476],'palermo':[38.1157,13.3615],'catania':[37.5079,15.083],
+  'messina':[38.1938,15.554],'siracusa':[37.0755,15.2866],'trapani':[38.0176,12.5365],
+  'cagliari':[39.2238,9.1217],'sassari':[40.7259,8.5594],'olbia':[40.9237,9.4966],
+  'brescia':[45.5416,10.2118],'bergamo':[45.6983,9.6773],'mantova':[45.1564,10.7914],
+  'cremona':[45.1333,10.0167],'pavia':[45.1847,9.1582],'como':[45.8081,9.0852],
+  'varese':[45.8206,8.825],'novara':[45.4469,8.6219],'alessandria':[44.9133,8.6153],
+  'adro':[45.6167,9.9667],'oppeano':[45.3167,11.0992],'cornuda':[45.8333,12.0167],
+  'cellole':[41.1147,13.9286],'villa santa lucia':[41.4697,13.773],'ausonia':[41.3364,13.73],
+  'isola del liri':[41.6808,13.5764],'roccapiemonte':[40.7619,14.6908],
+  'nepi':[42.2436,12.3453],'pomezia':[41.6694,12.5019],'ariccia':[41.7292,12.6719],
+};
 
-          const loadData = async () => {
-            try {
-              setIsLoading(true);
-              setDataError(false);
-              
-              // Carica Foglio 1 (consuntivi)
-              console.log('Caricamento Foglio 1:', FOGLIO1_CSV_URL);
-              const response1 = await fetch(FOGLIO1_CSV_URL);
-              if (!response1.ok) throw new Error(`HTTP ${response1.status} - Foglio 1`);
-              
-              const csvText1 = await response1.text();
-              console.log('Foglio 1 caricato, primi 500 caratteri:', csvText1.substring(0, 500));
-              
-              const lines1 = csvText1.split('\n');
-              const headers1 = parseCSVLine(lines1[0]);
-              console.log('Headers Foglio 1:', headers1);
-              
-              const data1 = [];
-              for (let i = 1; i < lines1.length; i++) {
-                if (!lines1[i].trim()) continue;
-                
-                const values = parseCSVLine(lines1[i]);
-                const row = {};
-                
-                headers1.forEach((header, index) => {
-                  let value = values[index] || '';
-                  
-                  // Rimuovi caratteri non numerici (€, spazi)
-                  let cleanValue = value.replace(/€/g, '').replace(/\s/g, '').trim();
-                  
-                  // Gestione formato italiano:
-                  // Se contiene sia punto che virgola: 1.200,50 → punto è separatore migliaia
-                  // Se contiene solo virgola: 1200,50 → virgola è decimale
-                  // Se contiene solo punto: potrebbe essere 1.200 (migliaia) o 1.2 (decimale)
-                  
-                  if (cleanValue.includes(',') && cleanValue.includes('.')) {
-                    // Formato: 1.200,50 → rimuovi punti, converti virgola in punto
-                    cleanValue = cleanValue.replace(/\./g, '').replace(',', '.');
-                  } else if (cleanValue.includes(',')) {
-                    // Formato: 1200,50 → converti virgola in punto
-                    cleanValue = cleanValue.replace(',', '.');
-                  } else if (cleanValue.includes('.')) {
-                    // Formato ambiguo: 1.200 o 1.2
-                    // Se ci sono 3 cifre dopo il punto, è separatore migliaia
-                    const parts = cleanValue.split('.');
-                    if (parts.length === 2 && parts[1].length === 3) {
-                      // Es: 1.200 → 1200
-                      cleanValue = cleanValue.replace('.', '');
-                    }
-                    // Altrimenti lascia il punto come decimale
-                  }
-                  
-                  if (!isNaN(cleanValue) && cleanValue !== '') {
-                    row[header] = parseFloat(cleanValue);
-                  } else {
-                    row[header] = value;
-                  }
-                });
-                
-                // FILTRO: Escludi righe con COMPLETO = "NO"
-                const completo = row.COMPLETO || '';
-                if (completo.toUpperCase() === 'NO') {
-                  console.log('Riga esclusa (COMPLETO=NO):', row.ORDINE);
-                  continue;
-                }
-                
-                if (row.ORDINE && row['€/TON']) {
-                  data1.push(row);
-                }
-              }
-              
-              console.log('Foglio 1: dati caricati dopo filtro COMPLETO:', data1.length);
-              setExcelData(data1);
-              
-              // Carica Foglio 2 (tariffario trasporti)
-              console.log('Caricamento Foglio 2:', FOGLIO2_CSV_URL);
-              const response2 = await fetch(FOGLIO2_CSV_URL);
-              if (!response2.ok) throw new Error(`HTTP ${response2.status} - Foglio 2`);
-              
-              const csvText2 = await response2.text();
-              console.log('Foglio 2 caricato, primi 500 caratteri:', csvText2.substring(0, 500));
-              
-              const lines2 = csvText2.split('\n');
-              const headers2 = parseCSVLine(lines2[0]);
-              console.log('Headers Foglio 2:', headers2);
-              
-              const data2 = [];
-              for (let i = 1; i < lines2.length; i++) {
-                if (!lines2[i].trim()) continue;
-                
-                const values = parseCSVLine(lines2[i]);
-                const row = {};
-                
-                headers2.forEach((header, index) => {
-                  let value = values[index] || '';
-                  
-                  // Rimuovi caratteri non numerici (€, spazi)
-                  let cleanValue = value.replace(/€/g, '').replace(/\s/g, '').trim();
-                  
-                  // Gestione formato italiano:
-                  if (cleanValue.includes(',') && cleanValue.includes('.')) {
-                    // Formato: 1.200,50 → rimuovi punti, converti virgola in punto
-                    cleanValue = cleanValue.replace(/\./g, '').replace(',', '.');
-                  } else if (cleanValue.includes(',')) {
-                    // Formato: 1200,50 → converti virgola in punto
-                    cleanValue = cleanValue.replace(',', '.');
-                  } else if (cleanValue.includes('.')) {
-                    // Formato ambiguo: 1.200 o 1.2
-                    const parts = cleanValue.split('.');
-                    if (parts.length === 2 && parts[1].length === 3) {
-                      // Es: 1.200 → 1200
-                      cleanValue = cleanValue.replace('.', '');
-                    }
-                  }
-                  
-                  if (!isNaN(cleanValue) && cleanValue !== '') {
-                    row[header] = parseFloat(cleanValue);
-                  } else {
-                    row[header] = value;
-                  }
-                });
-                
-                // Almeno deve avere partenza, arrivo e costo
-                if (row['Luogo di Partenza'] && row['Luogo di arrivo'] && row['Costo']) {
-                  data2.push(row);
-                }
-              }
-              
-              console.log('Foglio 2: tariffario caricato:', data2.length, 'righe');
-              if (data2.length > 0) {
-                console.log('Prima riga tariffario:', data2[0]);
-              }
-              setTariffarioData(data2);
-              
-              // Destinazioni disponibili dal Foglio 1
-              const dests = [...new Set(data1.map(r => r.DESTINAZIONE).filter(Boolean))];
-              setAvailableDestinations(dests.sort());
-              
-              // Analizza destinazioni frequenti per suggerimenti Foglio 2
-              analyzeSuggestedDestinations(data1, data2);
-              
-            } catch (error) {
-              console.error('ERRORE:', error);
-              setDataError(true);
-              setErrorMessage(error.message);
-            } finally {
-              setIsLoading(false);
-            }
-          };
+const PORT_COORDS = {
+  'VENEZIA':[45.4408,12.3155],'TRIESTE':[45.6495,13.7768],'GENOVA':[44.4056,8.9463],
+  'LIVORNO':[43.5485,10.3106],'RAVENNA':[44.4184,12.2035],'NAPOLI':[40.8518,14.2681],
+  'SALERNO':[40.6824,14.7681],'CIVITAVECCHIA':[42.0938,11.7967],
+};
 
-          // Cache per coordinate per evitare chiamate ripetute
-          const coordsCache = {};
+function haversine([lat1,lon1],[lat2,lon2]) {
+  const R=6371, toR=Math.PI/180;
+  const dLat=(lat2-lat1)*toR, dLon=(lon2-lon1)*toR;
+  const a=Math.sin(dLat/2)**2+Math.cos(lat1*toR)*Math.cos(lat2*toR)*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
 
-          const analyzeSuggestedDestinations = (foglio1Data, foglio2Data) => {
-            console.log('=== ANALISI DESTINAZIONI FREQUENTI ===');
-            
-            // Crea mappa destinazioni nel Foglio 2 (già nel tariffario)
-            const tariffarioSet = new Set(
-              (foglio2Data || []).map(t => 
-                `${(t['Luogo di arrivo'] || '').trim().toUpperCase()}|${(t['Tipologia'] || '').trim().toUpperCase()}`
-              )
-            );
-            
-            // Conta occorrenze per destinazione + modalità
-            const destCounts = {};
-            foglio1Data.forEach(order => {
-              const dest = order.DESTINAZIONE;
-              const modalita = order["MODALITA'"];
-              if (!dest || !modalita) return;
-              
-              const key = `${dest}|${modalita}`;
-              if (!destCounts[key]) {
-                destCounts[key] = {
-                  destinazione: dest,
-                  modalita: modalita,
-                  count: 0,
-                  porti: new Set(),
-                  forwarders: new Set(),
-                  costiTotali: [],
-                  ultimoOrdine: order.ORDINE
-                };
-              }
-              
-              destCounts[key].count++;
-              if (order.PORTO) destCounts[key].porti.add(order.PORTO);
-              if (order.FORWARDER) destCounts[key].forwarders.add(order.FORWARDER);
-              
-              // Calcola costo totale (costi fissi + inland)
-              const totale = (parseFloat(order['FREE OUT'] || 0) +
-                             parseFloat(order['DELIVERY ORDER'] || 0) +
-                             parseFloat(order['CICLO TERMINAL'] || 0) +
-                             parseFloat(order['DOGANA'] || 0) +
-                             parseFloat(order['DIRITTO FISSO'] || 0) +
-                             parseFloat(order['INLAND'] || 0) +
-                             parseFloat(order['FLEGT'] || 0) +
-                             parseFloat(order['VISITA MERCE'] || 0) +
-                             parseFloat(order['SOSTE'] || 0) +
-                             parseFloat(order['SVINCOLO'] || 0));
-              
-              if (totale > 0) {
-                destCounts[key].costiTotali.push(totale);
-              }
-            });
-            
-            // Filtra destinazioni con 3+ occorrenze e NON nel tariffario
-            const suggestions = Object.values(destCounts)
-              .filter(d => {
-                const tariffKey = `${d.destinazione.trim().toUpperCase()}|${d.modalita.trim().toUpperCase()}`;
-                return d.count >= 3 && !tariffarioSet.has(tariffKey);
-              })
-              .sort((a, b) => b.count - a.count)
-              .slice(0, 10) // Top 10
-              .map(d => {
-                const avgCosto = d.costiTotali.length > 0
-                  ? (d.costiTotali.reduce((a, b) => a + b, 0) / d.costiTotali.length).toFixed(2)
-                  : 'N/D';
-                
-                return {
-                  destinazione: d.destinazione,
-                  modalita: d.modalita,
-                  occorrenze: d.count,
-                  portoComune: [...d.porti][0] || 'N/D',
-                  forwarderComune: [...d.forwarders][0] || 'N/D',
-                  costoMedio: avgCosto
-                };
-              });
-            
-            console.log(`Trovate ${suggestions.length} destinazioni frequenti da aggiungere al Foglio 2:`);
-            suggestions.forEach((s, i) => {
-              console.log(`${i+1}. ${s.destinazione} (${s.modalita}) - ${s.occorrenze}× - Media: €${s.costoMedio}`);
-            });
-            
-            setSuggestedDestinations(suggestions);
-          };
+function getCityCoords(name) {
+  const n=(name||'').toLowerCase().trim();
+  for (const [city,coords] of Object.entries(CITY_COORDS)) {
+    if (n===city||n.includes(city)||city.includes(n)) return coords;
+  }
+  return null;
+}
 
-          const getCoordinates = async (address) => {
-            // Controlla cache
-            if (coordsCache[address]) {
-              console.log(`Cache hit per: ${address}`);
-              return coordsCache[address];
-            }
-            
-            const normalized = address.toLowerCase().trim();
-            
-            const cities = {
-              // Nord-Ovest
-              'milano': { lat: 45.4642, lon: 9.19 },
-              'torino': { lat: 45.0703, lon: 7.6869 },
-              'genova': { lat: 44.4056, lon: 8.9463 },
-              'aosta': { lat: 45.7372, lon: 7.3204 },
-              'novara': { lat: 45.4469, lon: 8.6219 },
-              'alessandria': { lat: 44.9133, lon: 8.6153 },
-              'asti': { lat: 44.9009, lon: 8.2065 },
-              'cuneo': { lat: 44.3841, lon: 7.5426 },
-              'verbania': { lat: 45.9214, lon: 8.5514 },
-              'biella': { lat: 45.5629, lon: 8.0583 },
-              'vercelli': { lat: 45.3206, lon: 8.4186 },
-              'imperia': { lat: 43.8868, lon: 8.0271 },
-              'savona': { lat: 44.3087, lon: 8.4816 },
-              'la spezia': { lat: 44.1025, lon: 9.8245 },
-              
-              // Nord-Est
-              'venezia': { lat: 45.4408, lon: 12.3155 },
-              'verona': { lat: 45.4384, lon: 10.9916 },
-              'padova': { lat: 45.4064, lon: 11.8768 },
-              'vicenza': { lat: 45.5455, lon: 11.5354 },
-              'treviso': { lat: 45.6669, lon: 12.243 },
-              'rovigo': { lat: 45.0703, lon: 11.7897 },
-              'belluno': { lat: 46.1386, lon: 12.2153 },
-              'trento': { lat: 46.0664, lon: 11.1257 },
-              'bolzano': { lat: 46.4983, lon: 11.3548 },
-              'trieste': { lat: 45.6495, lon: 13.7768 },
-              'udine': { lat: 46.0623, lon: 13.2345 },
-              'gorizia': { lat: 45.9411, lon: 13.6222 },
-              'pordenone': { lat: 45.9636, lon: 12.6609 },
-              
-              // Centro-Nord
-              'bologna': { lat: 44.4949, lon: 11.3426 },
-              'modena': { lat: 44.6471, lon: 10.9252 },
-              'parma': { lat: 44.8015, lon: 10.3279 },
-              'reggio emilia': { lat: 44.6989, lon: 10.6297 },
-              'piacenza': { lat: 45.0526, lon: 9.6924 },
-              'ferrara': { lat: 44.8381, lon: 11.6198 },
-              'ravenna': { lat: 44.4184, lon: 12.2035 },
-              'forli': { lat: 44.2226, lon: 12.0408 },
-              'cesena': { lat: 44.1391, lon: 12.2431 },
-              'rimini': { lat: 44.0678, lon: 12.5695 },
-              
-              // Lombardia dettaglio
-              'brescia': { lat: 45.5416, lon: 10.2118 },
-              'bergamo': { lat: 45.6983, lon: 9.6773 },
-              'mantova': { lat: 45.1564, lon: 10.7914 },
-              'cremona': { lat: 45.1333, lon: 10.0167 },
-              'pavia': { lat: 45.1847, lon: 9.1582 },
-              'como': { lat: 45.8081, lon: 9.0852 },
-              'varese': { lat: 45.8206, lon: 8.8250 },
-              'lecco': { lat: 45.8561, lon: 9.3978 },
-              'lodi': { lat: 45.3142, lon: 9.5034 },
-              'sondrio': { lat: 46.1699, lon: 9.8782 },
-              'monza': { lat: 45.5845, lon: 9.2744 },
-              'adro': { lat: 45.6167, lon: 9.9667 },
-              'oppeano': { lat: 45.316722, lon: 11.099167 },
-              'cornuda': { lat: 45.8333, lon: 12.0167 },
-              
-              // Toscana
-              'firenze': { lat: 43.7696, lon: 11.2558 },
-              'prato': { lat: 43.8777, lon: 11.0955 },
-              'livorno': { lat: 43.5485, lon: 10.3106 },
-              'pisa': { lat: 43.7228, lon: 10.4017 },
-              'arezzo': { lat: 43.4632, lon: 11.8796 },
-              'siena': { lat: 43.3188, lon: 11.3308 },
-              'grosseto': { lat: 42.7634, lon: 11.1139 },
-              'lucca': { lat: 43.8376, lon: 10.4950 },
-              'pistoia': { lat: 43.9330, lon: 10.9177 },
-              'massa': { lat: 44.0366, lon: 10.1411 },
-              
-              // Centro
-              'roma': { lat: 41.9028, lon: 12.4964 },
-              'latina': { lat: 41.4677, lon: 12.9036 },
-              'frosinone': { lat: 41.6400, lon: 13.3405 },
-              'rieti': { lat: 42.4048, lon: 12.8566 },
-              'viterbo': { lat: 42.4208, lon: 12.1078 },
-              'perugia': { lat: 43.1122, lon: 12.3888 },
-              'terni': { lat: 42.5633, lon: 12.5317 },
-              'ancona': { lat: 43.6158, lon: 13.5189 },
-              'pesaro': { lat: 43.9102, lon: 12.9130 },
-              'macerata': { lat: 43.3002, lon: 13.4534 },
-              'ascoli piceno': { lat: 42.8533, lon: 13.5759 },
-              'fermo': { lat: 43.1605, lon: 13.7185 },
-              
-              // Lazio dettaglio
-              'civitavecchia': { lat: 42.0938, lon: 11.7967 },
-              'ariccia': { lat: 41.7292, lon: 12.6719 },
-              'albano laziale': { lat: 41.7286, lon: 12.6581 },
-              'pomezia': { lat: 41.6694, lon: 12.5019 },
-              'santa palomba': { lat: 41.7167, lon: 12.5667 },
-              'san cesareo': { lat: 41.8167, lon: 12.8000 },
-              'nepi': { lat: 42.2436, lon: 12.3453 },
-              
-              // Sud
-              'napoli': { lat: 40.8518, lon: 14.2681 },
-              'salerno': { lat: 40.6824, lon: 14.7681 },
-              'caserta': { lat: 41.0732, lon: 14.3328 },
-              'benevento': { lat: 41.1297, lon: 14.7826 },
-              'avellino': { lat: 40.9145, lon: 14.7906 },
-              'bari': { lat: 41.1171, lon: 16.8719 },
-              'taranto': { lat: 40.4738, lon: 17.2405 },
-              'foggia': { lat: 41.4621, lon: 15.5447 },
-              'lecce': { lat: 40.3515, lon: 18.1750 },
-              'brindisi': { lat: 40.6327, lon: 17.9419 },
-              'barletta': { lat: 41.3208, lon: 16.2819 },
-              'potenza': { lat: 40.6389, lon: 15.8056 },
-              'matera': { lat: 40.6664, lon: 16.6043 },
-              'cosenza': { lat: 39.2979, lon: 16.2523 },
-              'catanzaro': { lat: 38.9098, lon: 16.5877 },
-              'reggio calabria': { lat: 38.1113, lon: 15.6476 },
-              'crotone': { lat: 39.0808, lon: 17.1250 },
-              'vibo valentia': { lat: 38.6756, lon: 16.1008 },
-              
-              // Campania dettaglio
-              'aversa': { lat: 40.9732, lon: 14.2064 },
-              'castellammare di stabia': { lat: 40.7017, lon: 14.4847 },
-              'torre del greco': { lat: 40.7881, lon: 14.3686 },
-              'pozzuoli': { lat: 40.8241, lon: 14.1231 },
-              'giugliano': { lat: 40.9283, lon: 14.1942 },
-              'afragola': { lat: 40.9238, lon: 14.3106 },
-              'cellole': { lat: 41.1147, lon: 13.9286 },
-              'isola del liri': { lat: 41.6808, lon: 13.5764 },
-              'villa santa lucia': { lat: 41.4697, lon: 13.7730 },
-              'villa s.lucia': { lat: 41.4697, lon: 13.7730 },
-              'villa s lucia': { lat: 41.4697, lon: 13.7730 },
-              'roccapiemonte': { lat: 40.7619, lon: 14.6908 },
-              'ausonia': { lat: 41.3364, lon: 13.7300 },
-              
-              // Sicilia
-              'palermo': { lat: 38.1157, lon: 13.3615 },
-              'catania': { lat: 37.5079, lon: 15.0830 },
-              'messina': { lat: 38.1938, lon: 15.5540 },
-              'siracusa': { lat: 37.0755, lon: 15.2866 },
-              'trapani': { lat: 38.0176, lon: 12.5365 },
-              'agrigento': { lat: 37.3110, lon: 13.5765 },
-              'ragusa': { lat: 36.9269, lon: 14.7256 },
-              'caltanissetta': { lat: 37.4908, lon: 14.0622 },
-              'enna': { lat: 37.5671, lon: 14.2793 },
-              
-              // Sardegna
-              'cagliari': { lat: 39.2238, lon: 9.1217 },
-              'sassari': { lat: 40.7259, lon: 8.5594 },
-              'nuoro': { lat: 40.3210, lon: 9.3301 },
-              'oristano': { lat: 39.9042, lon: 8.5914 },
-              'olbia': { lat: 40.9237, lon: 9.4966 }
-            };
-            
-            for (const [city, coords] of Object.entries(cities)) {
-              if (normalized.includes(city)) {
-                coordsCache[address] = coords;
-                return coords;
-              }
-            }
+/* ═══════════════════════════════════════════════════
+   MACHINE LEARNING — Multiple Linear Regression
+   Features: lat_dest, lon_dest, lat_port, lon_port,
+             dist_km, log_tons, tons, sin_month_order,
+             cos_month_order, sin_month_arrival,
+             cos_month_arrival, lead_time_months,
+             modalita_enc
+═══════════════════════════════════════════════════ */
+class LogisticRegressor {
+  constructor() {
+    this.weights=null; this.bias=0;
+    this.fMeans=[]; this.fStds=[];
+    this.tMean=0; this.tStd=1;
+    this.residuals=[]; this.r2=0; this.mae=0;
+    this.trainSamples=[];
+  }
 
-            try {
-              // Timeout ridotto a 2 secondi per geocoding
-              const controller = new AbortController();
-              const timeoutId = setTimeout(() => controller.abort(), 2000);
-              
-              const response = await fetch(
-                `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}, Italy&limit=1`,
-                { 
-                  headers: { 'User-Agent': 'LogisticsCostCalculator/1.0' },
-                  signal: controller.signal
-                }
-              );
-              
-              clearTimeout(timeoutId);
-              
-              const data = await response.json();
-              if (data && data.length > 0) {
-                const coords = {
-                  lat: Number(Number(data[0].lat).toFixed(6)),
-                  lon: Number(Number(data[0].lon).toFixed(6))
-                };
-                coordsCache[address] = coords;
-                console.log(`Geocoded "${address}":`, coords);
-                return coords;
-              }
-            } catch (error) {
-              if (error.name === 'AbortError') {
-                console.warn(`Geocoding timeout per ${address}`);
-              } else {
-                console.error('Geocoding error:', error);
-              }
-            }
-            return null;
-          };
+  normalize(X) {
+    return X.map(row=>row.map((v,j)=>(v-this.fMeans[j])/(this.fStds[j]||1)));
+  }
 
-          const calculateDistance = async (c1, c2) => {
-            try {
-              // OSRM con timeout di 3 secondi per evitare attese infinite
-              const controller = new AbortController();
-              const timeoutId = setTimeout(() => controller.abort(), 3000);
-              
-              const url = `https://router.project-osrm.org/route/v1/driving/${c1.lon},${c1.lat};${c2.lon},${c2.lat}?overview=false`;
-              const response = await fetch(url, { signal: controller.signal });
-              
-              clearTimeout(timeoutId);
-              
-              if (!response.ok) {
-                throw new Error('OSRM API error');
-              }
-              
-              const data = await response.json();
-              
-              if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
-                const distanceKm = data.routes[0].distance / 1000;
-                return distanceKm;
-              } else {
-                console.warn('OSRM fallito, uso Haversine');
-                return calculateDistanceHaversine(c1, c2);
-              }
-            } catch (error) {
-              if (error.name === 'AbortError') {
-                console.warn('OSRM timeout, uso Haversine');
-              } else {
-                console.error('Errore OSRM:', error);
-              }
-              return calculateDistanceHaversine(c1, c2);
-            }
-          };
-          
-          const calculateDistanceHaversine = (c1, c2) => {
-            const R = 6371;
-            const dLat = (c2.lat - c1.lat) * Math.PI / 180;
-            const dLon = (c2.lon - c1.lon) * Math.PI / 180;
-            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                      Math.cos(c1.lat * Math.PI / 180) * Math.cos(c2.lat * Math.PI / 180) *
-                      Math.sin(dLon/2) * Math.sin(dLon/2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            return R * c;
-          };
+  fit(X, y) {
+    this.trainSamples = X.map((x,i)=>({x,y:y[i]}));
+    const n=X.length, m=X[0].length;
+    this.fMeans=Array(m).fill(0); this.fStds=Array(m).fill(0);
+    X.forEach(row=>row.forEach((v,j)=>this.fMeans[j]+=v/n));
+    X.forEach(row=>row.forEach((v,j)=>this.fStds[j]+=(v-this.fMeans[j])**2/n));
+    this.fStds=this.fStds.map(v=>Math.sqrt(v)||1);
+    this.tMean=y.reduce((a,b)=>a+b,0)/y.length;
+    this.tStd=Math.sqrt(y.reduce((a,b)=>a+(b-this.tMean)**2,0)/y.length)||1;
 
-          const calculateBestOption = async () => {
-            if (!destinazione || !modalita || !tonnellate) {
-              alert('Compila tutti i campi');
-              return;
-            }
-            
-            setIsCalculating(true);
-            
-            try {
-              console.log('=== INIZIO CALCOLO ===');
-              console.log('Modalità richiesta:', modalita);
-              console.log('Destinazione richiesta:', destinazione);
-              console.log('Totale ordini disponibili (Foglio 1):', excelData.length);
-              
-              const filtered = excelData.filter(r => {
-                const modalitaRow = r["MODALITA'"];
-                const hasEuroTon = r['€/TON'];
-                return modalitaRow === modalita && hasEuroTon;
-              });
-              
-              console.log('Ordini filtrati per modalità "' + modalita + '":', filtered.length);
-              
-              if (filtered.length === 0) {
-                alert('Nessun ordine per questa modalità');
-                setIsCalculating(false);
-                return;
-              }
-              
-              // Cerca match esatto nella destinazione
-              const exact = filtered.filter(r => r.DESTINAZIONE === destinazione);
-              
-              let ordersToUse = [];
-              let isEstimated = false;
-              let referenceDestinations = [];
-              let useTariffario = false;
-              let tariffarioMatch = null;
-              
-              if (exact.length > 0) {
-                // Match esatto trovato nel Foglio 1
-                console.log('✓ Match esatto trovato nel Foglio 1');
-                ordersToUse = exact;
-              } else {
-                // Nessun match esatto: cerca nel tariffario (Foglio 2)
-                console.log('⚠️ Nessun match esatto, cerco nel tariffario...');
-                
-                if (tariffarioData && tariffarioData.length > 0) {
-                  console.log('=== RICERCA NEL TARIFFARIO ===');
-                  console.log('Destinazione cercata:', destinazione);
-                  console.log('Modalità cercata:', modalita);
-                  console.log('Totale righe tariffario:', tariffarioData.length);
-                  console.log('Prima riga tariffario (esempio):', tariffarioData[0]);
-                  console.log('Nomi colonne disponibili:', Object.keys(tariffarioData[0]));
-                  
-                  // Cerca nel tariffario una corrispondenza di destinazione e tipologia
-                  const tariffarioFiltered = tariffarioData.filter(t => {
-                    const arrivo = t['Luogo di arrivo'] || '';
-                    const tipologia = t['Tipologia'] || '';
-                    
-                    console.log('Controllo riga:', {
-                      arrivo: arrivo,
-                      tipologia: tipologia,
-                      arrivoMatch: arrivo.toLowerCase().trim() === destinazione.toLowerCase().trim(),
-                      tipologiaMatch: tipologia.toUpperCase() === modalita.toUpperCase()
-                    });
-                    
-                    // Normalizza confronto (case-insensitive, trim)
-                    const arrivoMatch = arrivo.toLowerCase().trim() === destinazione.toLowerCase().trim();
-                    const tipologiaMatch = tipologia.toUpperCase() === modalita.toUpperCase();
-                    
-                    return arrivoMatch && tipologiaMatch;
-                  });
-                  
-                  console.log('Tariffario: trovate', tariffarioFiltered.length, 'corrispondenze');
-                  
-                  if (tariffarioFiltered.length > 0) {
-                    // Usa il tariffario
-                    useTariffario = true;
-                    tariffarioMatch = tariffarioFiltered[0]; // Prendi la prima corrispondenza
-                    console.log('✓ Uso tariffario:', tariffarioMatch);
-                  }
-                }
-                
-                if (!useTariffario) {
-                  // Fallback: stima basata su destinazioni vicine (logica originale)
-                  console.log('⚠️ Nessun match nel tariffario, stimo da destinazioni vicine...');
-                  console.log('💡 SUGGERIMENTO: Aggiungi questa destinazione al Foglio 2 (tariffario) per calcoli istantanei!');
-                  isEstimated = true;
-                  const targetCoords = await getCoordinates(destinazione);
-                  
-                  if (!targetCoords) {
-                    alert('Impossibile trovare la destinazione');
-                    setIsCalculating(false);
-                    return;
-                  }
-                  
-                  console.log(`Calcolo distanze da tutte le ${filtered.length} destinazioni...`);
-                  
-                  // USA TUTTE le destinazioni TRUCK disponibili per trovare la migliore
-                  const samplesToCheck = filtered;
-                  const destsWithDist = [];
-                  
-                  // PARALLELO: Calcola tutte le coordinate insieme
-                  const coordsPromises = samplesToCheck.map(row => getCoordinates(row.DESTINAZIONE));
-                  const allCoords = await Promise.all(coordsPromises);
-                  
-                  // PARALLELO: Calcola tutte le distanze insieme (invece di una alla volta)
-                  const distancePromises = allCoords.map((coords, idx) => {
-                    if (coords) {
-                      return calculateDistance(targetCoords, coords).then(distance => ({
-                        destination: samplesToCheck[idx].DESTINAZIONE,
-                        distance: distance
-                      }));
-                    }
-                    return null;
-                  });
-                  
-                  const results = await Promise.all(distancePromises);
-                  
-                  results.forEach(result => {
-                    if (result) {
-                      destsWithDist.push(result);
-                      console.log(`✓ ${result.destination}: ${result.distance.toFixed(0)}km`);
-                    }
-                  });
-                  
-                  destsWithDist.sort((a, b) => a.distance - b.distance);
-                  const nearest = destsWithDist.slice(0, 3); // Top 3 più vicine
-                  referenceDestinations = nearest;
-                  
-                  console.log('Destinazioni più vicine trovate:');
-                  nearest.forEach((d, i) => {
-                    console.log(`${i+1}. ${d.destination}: ${d.distance.toFixed(0)}km`);
-                  });
-                  
-                  nearest.forEach(nd => {
-                    const orders = filtered.filter(r => r.DESTINAZIONE === nd.destination);
-                    ordersToUse.push(...orders);
-                  });
-                }
-              }
-              
-              const ton = parseFloat(tonnellate);
-              
-              // Se usiamo il tariffario, calcolo ibrido: INLAND dal Foglio 2 + costi fissi medi dal Foglio 1
-              if (useTariffario) {
-                console.log('=== USO TARIFFARIO (SOLO INLAND) ===');
-                console.log('Riga tariffario trovata:', tariffarioMatch);
-                
-                const inlandTariffario = parseFloat(tariffarioMatch['Costo']);
-                const partner = tariffarioMatch['Partner'] || 'N/D';
-                const porto = tariffarioMatch['Luogo di Partenza'] || 'N/D';
-                
-                console.log('INLAND da tariffario:', inlandTariffario);
-                
-                // Calcola costi fissi medi dal Foglio 1 per questa modalità e porto
-                const ordersForAvg = excelData.filter(order => 
-                  order["MODALITA'"] === modalita && 
-                  order.PORTO === porto.toUpperCase() &&
-                  order['€/TON']
+    const Xn=this.normalize(X);
+    const yn=y.map(v=>(v-this.tMean)/this.tStd);
+    this.weights=Array(m).fill(0); this.bias=0;
+    const lr=0.015, epochs=3000;
+
+    for (let e=0;e<epochs;e++) {
+      const preds=Xn.map(row=>this.dot(row,this.weights)+this.bias);
+      const errs=preds.map((p,i)=>p-yn[i]);
+      const dW=Array(m).fill(0); let dB=0;
+      errs.forEach((err,i)=>{ Xn[i].forEach((xv,j)=>dW[j]+=err*xv/n); dB+=err/n; });
+      const decay=e<1000?0.001:0.0005;
+      this.weights=this.weights.map((w,j)=>w-lr*(dW[j]+decay*w));
+      this.bias-=lr*dB;
+    }
+
+    const yPred=X.map(row=>this.predict(row));
+    this.residuals=y.map((yv,i)=>yv-yPred[i]);
+    const ssTot=y.reduce((a,v)=>a+(v-this.tMean)**2,0);
+    const ssRes=this.residuals.reduce((a,v)=>a+v**2,0);
+    this.r2=Math.max(0,1-ssRes/ssTot);
+    this.mae=this.residuals.reduce((a,v)=>a+Math.abs(v),0)/y.length;
+    return this;
+  }
+
+  dot(a,b){return a.reduce((s,v,i)=>s+v*b[i],0);}
+
+  predict(x) {
+    if(!this.weights) return this.tMean;
+    const xn=x.map((v,j)=>(v-this.fMeans[j])/(this.fStds[j]||1));
+    return this.dot(xn,this.weights)*this.tStd+this.tMean+this.bias*this.tStd;
+  }
+
+  confidenceInterval(x, alpha=0.90) {
+    const pred=this.predict(x);
+    const rStd=Math.sqrt(this.residuals.reduce((a,v)=>a+v**2,0)/Math.max(this.residuals.length-1,1));
+    const z=alpha===0.90?1.645:1.96;
+    return {pred:Math.max(pred,0), low:Math.max(pred-z*rStd,0), high:Math.max(pred+z*rStd,0), rStd};
+  }
+
+  // Anomaly detection: Z-score rispetto ai residui
+  anomalyScore(actualValue, features) {
+    const pred=this.predict(features);
+    const rStd=Math.sqrt(this.residuals.reduce((a,v)=>a+v**2,0)/Math.max(this.residuals.length,1));
+    const residual=actualValue-pred;
+    const zScore=Math.abs(residual)/Math.max(rStd,0.01);
+    return {
+      zScore, isAnomaly: zScore>2.0,
+      isExtreme: zScore>3.0,
+      direction: residual>0?'ALTO':'BASSO',
+      residual, pred,
+      percentDiff: ((actualValue-pred)/Math.max(pred,0.01)*100)
+    };
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   FEATURE BUILDER
+═══════════════════════════════════════════════════ */
+function buildFeatures(destName, portName, tons, orderDate, arrivalDate, modalita, avgSostaGiorni) {
+  const dc=getCityCoords(destName)||[42.0,12.5];
+  const pc=PORT_COORDS[portName?.toUpperCase()]||[44.0,10.0];
+  const dist=haversine(pc,dc);
+  const om=orderDate?orderDate.getMonth()+1:6;
+  const am=arrivalDate?arrivalDate.getMonth()+1:(om+4>12?om+4-12:om+4);
+  const logTons=Math.log(Math.max(tons,1));
+  const modalitaEnc=(modalita||'').toUpperCase()==='CONTAINER'?1:0;
+
+  // Lead time in mesi (default 4 se non disponibile)
+  let leadMonths=4;
+  if (orderDate && arrivalDate) {
+    leadMonths=Math.max(0,(arrivalDate-orderDate)/(1000*60*60*24*30));
+  }
+
+  // Sosta normalizzata (default 14 giorni se non disponibile)
+  const sostaEnc=Math.min(avgSostaGiorni||14, 60)/60;
+
+  return [
+    dc[0], dc[1],
+    pc[0], pc[1],
+    dist,
+    logTons, tons,
+    Math.sin(2*Math.PI*om/12), Math.cos(2*Math.PI*om/12),
+    Math.sin(2*Math.PI*am/12), Math.cos(2*Math.PI*am/12),
+    Math.min(leadMonths,12),
+    modalitaEnc,
+    sostaEnc   // nuova feature: sosta normalizzata
+  ];
+}
+
+/* ═══════════════════════════════════════════════════
+   ANOMALY DETECTION sugli ordini storici
+═══════════════════════════════════════════════════ */
+function detectAnomalies(orders, model) {
+  const anomalies = [];
+  orders.forEach(order => {
+    const euroTon=parseFloat(order['€/TON']);
+    const tons=parseFloat(order.TON||0);
+    if (!euroTon||tons<=0||!order.PORTO||!PORT_COORDS[order.PORTO]) return;
+    const dc=getCityCoords(order.DESTINAZIONE);
+    if (!dc) return;
+
+    const features=buildFeatures(
+      order.DESTINAZIONE, order.PORTO, tons,
+      order._dateOrdine, order._dateArrivo, order["MODALITA'"]
+    );
+    const score=model.anomalyScore(euroTon, features);
+    if (score.isAnomaly) {
+      anomalies.push({
+        ordine: order.ORDINE,
+        destinazione: order.DESTINAZIONE,
+        porto: order.PORTO,
+        modalita: order["MODALITA'"],
+        euroTon,
+        ...score
+      });
+    }
+  });
+  return anomalies.sort((a,b)=>b.zScore-a.zScore);
+}
+
+/* ═══════════════════════════════════════════════════
+   TREND + FORECASTING
+═══════════════════════════════════════════════════ */
+function computeTrendAndForecast(orders, destName, modalita, monthsForward=3) {
+  const destCoords=getCityCoords(destName);
+  const now=new Date();
+  const cutoff=new Date(now); cutoff.setFullYear(cutoff.getFullYear()-2);
+
+  // Filtra ordini rilevanti (stessa modalità, rotta simile, ultimi 2 anni)
+  const relevant=orders.filter(o=>{
+    if(o["MODALITA'"]!==modalita||!o['€/TON']) return false;
+    const d=o._dateOrdine||o._dateArrivo;
+    if(!d||d<cutoff) return false;
+    if(destCoords&&o.DESTINAZIONE) {
+      const oc=getCityCoords(o.DESTINAZIONE);
+      if(oc&&haversine(destCoords,oc)>250) return false;
+    }
+    return true;
+  }).sort((a,b)=>{
+    const da=a._dateOrdine||a._dateArrivo||new Date(0);
+    const db=b._dateOrdine||b._dateArrivo||new Date(0);
+    return da-db;
+  });
+
+  if(relevant.length<4) return null;
+
+  // Raggruppa per mese (usa data ordine)
+  const byMonth={};
+  relevant.forEach(o=>{
+    const d=o._dateOrdine||o._dateArrivo;
+    const key=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    if(!byMonth[key]) byMonth[key]=[];
+    byMonth[key].push(parseFloat(o['€/TON']));
+  });
+
+  const months=Object.keys(byMonth).sort();
+  const series=months.map((m,i)=>({
+    label:m, idx:i,
+    avg: byMonth[m].reduce((a,b)=>a+b,0)/byMonth[m].length,
+    count: byMonth[m].length
+  }));
+
+  if(series.length<3) return null;
+
+  // Regressione lineare semplice per trend
+  const n=series.length;
+  const xMean=(n-1)/2;
+  const yMean=series.reduce((s,p)=>s+p.avg,0)/n;
+  const slope=series.reduce((s,p)=>s+(p.idx-xMean)*(p.avg-yMean),0)/
+              series.reduce((s,p)=>s+(p.idx-xMean)**2,0.001);
+  const intercept=yMean-slope*xMean;
+  const trendPct=(slope/Math.max(yMean,0.01))*100;
+
+  // R² trend
+  const yHat=series.map(p=>intercept+slope*p.idx);
+  const ssTot=series.reduce((s,p)=>s+(p.avg-yMean)**2,0);
+  const ssRes=series.reduce((s,p,i)=>s+(p.avg-yHat[i])**2,0);
+  const trendR2=Math.max(0,1-ssRes/ssTot);
+
+  // Forecast
+  const lastIdx=series.length-1;
+  const lastDate=new Date(series[lastIdx].label+'-01');
+  const forecasts=[];
+  for(let i=1;i<=monthsForward;i++){
+    const d=new Date(lastDate); d.setMonth(d.getMonth()+i);
+    const label=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const predIdx=lastIdx+i;
+    const predAvg=intercept+slope*predIdx;
+    // Residual std per intervallo
+    const rStd=Math.sqrt(ssRes/Math.max(n-2,1));
+    forecasts.push({
+      label, idx:predIdx, avg:Math.max(predAvg,0),
+      low:Math.max(predAvg-1.645*rStd,0),
+      high:predAvg+1.645*rStd,
+      isForecast:true
+    });
+  }
+
+  // Stagionalità: media mensile normalizzata
+  const monthlyAvg={};
+  relevant.forEach(o=>{
+    const d=o._dateOrdine||o._dateArrivo;
+    const m=d.getMonth();
+    if(!monthlyAvg[m]) monthlyAvg[m]=[];
+    monthlyAvg[m].push(parseFloat(o['€/TON']));
+  });
+  const seasonality=Object.entries(monthlyAvg).map(([m,vs])=>({
+    month:parseInt(m),
+    name:['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'][parseInt(m)],
+    avg:vs.reduce((a,b)=>a+b,0)/vs.length,
+    count:vs.length
+  })).sort((a,b)=>a.month-b.month);
+
+  const sAvg=seasonality.reduce((s,p)=>s+p.avg,0)/Math.max(seasonality.length,1);
+  seasonality.forEach(s=>s.relDiff=((s.avg-sAvg)/Math.max(sAvg,0.01))*100);
+
+  return {series, forecasts, slope, trendPct, trendR2, intercept, totalOrders:relevant.length, seasonality};
+}
+
+/* ═══════════════════════════════════════════════════
+   MULTI-VARIABLE OPTIMIZER
+   Trova la combinazione porto+forwarder ottimale
+   considerando: costo previsto, affidabilità storica,
+   volume ordini, lead time medio
+═══════════════════════════════════════════════════ */
+function multiVariableOptimize(model, destName, tons, modalita, orders, arrivalDate, sostaStats) {
+  const destCoords=getCityCoords(destName)||[42.0,12.5];
+  const orderDate=new Date();
+
+  // Raggruppa per porto+forwarder
+  const combos={};
+  orders.filter(o=>o["MODALITA'"]===modalita&&o['€/TON']&&o.PORTO&&o.FORWARDER).forEach(o=>{
+    const key=`${o.PORTO}|${o.FORWARDER}`;
+    if(!combos[key]) combos[key]={porto:o.PORTO, forwarder:o.FORWARDER, values:[], leadTimes:[], anomalyCount:0};
+    combos[key].values.push(parseFloat(o['€/TON']));
+    if(o._dateOrdine&&o._dateArrivo) {
+      const lt=(o._dateArrivo-o._dateOrdine)/(1000*60*60*24*30);
+      combos[key].leadTimes.push(Math.min(lt,12));
+    }
+  });
+
+  const results=[];
+  Object.values(combos).forEach(combo=>{
+    if(combo.values.length<2||!PORT_COORDS[combo.porto]) return;
+    const n=combo.values.length;
+    const mean=combo.values.reduce((a,b)=>a+b,0)/n;
+    const variance=combo.values.reduce((a,v)=>a+(v-mean)**2,0)/n;
+    const stdDev=Math.sqrt(variance);
+    const cv=stdDev/Math.max(mean,0.01); // Coefficiente di variazione = instabilità
+
+    const avgSostaOpt = getSostaForDest(sostaStats, destName, modalita);
+    const features=buildFeatures(destName,combo.porto,tons,orderDate,arrivalDate||null,modalita,avgSostaOpt);
+    const ci=model.confidenceInterval(features);
+    const predicted=ci.pred;
+
+    const avgLeadTime=combo.leadTimes.length>0?combo.leadTimes.reduce((a,b)=>a+b,0)/combo.leadTimes.length:4;
+    const portDist=haversine(PORT_COORDS[combo.porto],destCoords);
+
+    // Score composito (0–100, più alto = migliore)
+    // Normalizza su scala relativa
+    results.push({
+      porto:combo.porto, forwarder:combo.forwarder,
+      predicted, ci, mean, stdDev, cv,
+      numOrders:n, avgLeadTime, portDist,
+      _raw:{predicted,cv,numOrders:n,avgLeadTime}
+    });
+  });
+
+  if(results.length===0) return [];
+
+  // Normalizza ogni dimensione e calcola score
+  const maxPred=Math.max(...results.map(r=>r.predicted));
+  const minPred=Math.min(...results.map(r=>r.predicted));
+  const maxCV=Math.max(...results.map(r=>r.cv));
+  const maxN=Math.max(...results.map(r=>r.numOrders));
+  const maxLT=Math.max(...results.map(r=>r.avgLeadTime));
+
+  results.forEach(r=>{
+    const costScore=1-((r.predicted-minPred)/Math.max(maxPred-minPred,0.01)); // basso è meglio
+    const reliabilityScore=1-(r.cv/Math.max(maxCV,0.01));                     // bassa varianza è meglio
+    const volumeScore=r.numOrders/Math.max(maxN,1);                           // più ordini = più affidabile
+    const speedScore=1-(r.avgLeadTime/Math.max(maxLT,0.01));                  // lead time basso è meglio
+
+    // Pesi: costo 45%, affidabilità 30%, volume dati 15%, velocità 10%
+    r.score=(costScore*0.45+reliabilityScore*0.30+volumeScore*0.15+speedScore*0.10)*100;
+    r.costScore=costScore*100;
+    r.reliabilityScore=reliabilityScore*100;
+    r.volumeScore=volumeScore*100;
+  });
+
+  return results.sort((a,b)=>b.score-a.score);
+}
+
+/* ═══════════════════════════════════════════════════
+   SOSTA CONTAINER — analisi giorni porto→restituzione
+   Normalizzata per NR CNTR per evitare distorsioni
+   su BL multi-container con un container "lento"
+═══════════════════════════════════════════════════ */
+function computeSostaStats(orders) {
+  const FREE_TIME_DEFAULT = 14; // giorni free time standard armatori
+
+  const byDest = {};
+  const byPorto = {};
+  let totalSoste = [], totalWithData = 0;
+
+  orders.forEach(order => {
+    const dateArrivo   = order._dateArrivo;
+    const dateRitiro   = order._dateRitiro;
+    const dateRest     = order._dateRestituzione;
+    const nCntr        = Math.max(parseFloat(order['NR CNTR'] || order['NR_CNTR'] || 1), 1);
+    const modalita     = order["MODALITA'"];
+
+    if (!dateArrivo || !dateRest) return;
+
+    // Giorni totali da arrivo a restituzione ultimo vuoto
+    const giorniTotali = Math.max(0, (dateRest - dateArrivo) / (1000*60*60*24));
+
+    // Giorni in terminal (arrivo → ritiro) — opzionale
+    const giorniTerminal = dateRitiro
+      ? Math.max(0, (dateRitiro - dateArrivo) / (1000*60*60*24))
+      : null;
+
+    // Giorni utilizzo (ritiro → restituzione) — opzionale
+    const giorniUtilizzo = dateRitiro
+      ? Math.max(0, (dateRest - dateRitiro) / (1000*60*60*24))
+      : null;
+
+    // Penale: giorni oltre free time × nCntr
+    // Se la BL ha più container, la sosta "media per container" è più rappresentativa
+    // ma usiamo il totale per valutare il rischio detention effettivo
+    const giorniOltreFreetime = Math.max(0, giorniTotali - FREE_TIME_DEFAULT);
+    const detentionRisk = giorniOltreFreetime > 0; // oltre free time
+
+    // Normalizza: sosta per container (per confronto tra BL diverse)
+    const sostaPerCntr = giorniTotali / nCntr;
+
+    totalSoste.push(giorniTotali);
+    totalWithData++;
+
+    // Aggrega per destinazione
+    const dest = order.DESTINAZIONE;
+    if (dest) {
+      if (!byDest[dest]) byDest[dest] = { dest, soste:[], sostePerCntr:[], terminal:[], utilizzo:[], nCntr:[], detention:0, count:0, modalita };
+      byDest[dest].soste.push(giorniTotali);
+      byDest[dest].sostePerCntr.push(sostaPerCntr);
+      if (giorniTerminal !== null) byDest[dest].terminal.push(giorniTerminal);
+      if (giorniUtilizzo !== null) byDest[dest].utilizzo.push(giorniUtilizzo);
+      byDest[dest].nCntr.push(nCntr);
+      if (detentionRisk) byDest[dest].detention++;
+      byDest[dest].count++;
+    }
+
+    // Aggrega per porto
+    const porto = order.PORTO;
+    if (porto) {
+      if (!byPorto[porto]) byPorto[porto] = { porto, soste:[], detention:0, count:0 };
+      byPorto[porto].soste.push(giorniTotali);
+      if (detentionRisk) byPorto[porto].detention++;
+      byPorto[porto].count++;
+    }
+  });
+
+  if (totalWithData === 0) return null;
+
+  // Calcola statistiche per destinazione
+  const destStats = Object.values(byDest).map(d => {
+    const avg = d.soste.reduce((a,b)=>a+b,0)/d.soste.length;
+    const avgPerCntr = d.sostePerCntr.reduce((a,b)=>a+b,0)/d.sostePerCntr.length;
+    const max = Math.max(...d.soste);
+    const min = Math.min(...d.soste);
+    const std = Math.sqrt(d.soste.reduce((a,v)=>a+(v-avg)**2,0)/d.soste.length);
+    const avgTerminal = d.terminal.length > 0 ? d.terminal.reduce((a,b)=>a+b,0)/d.terminal.length : null;
+    const avgUtilizzo = d.utilizzo.length > 0 ? d.utilizzo.reduce((a,b)=>a+b,0)/d.utilizzo.length : null;
+    const avgCntr = d.nCntr.reduce((a,b)=>a+b,0)/d.nCntr.length;
+    const detentionPct = (d.detention/d.count)*100;
+    return { ...d, avg, avgPerCntr, max, min, std, avgTerminal, avgUtilizzo, avgCntr, detentionPct };
+  }).sort((a,b)=>b.avg-a.avg);
+
+  // Statistiche globali
+  const globalAvg = totalSoste.reduce((a,b)=>a+b,0)/totalSoste.length;
+  const globalStd = Math.sqrt(totalSoste.reduce((a,v)=>a+(v-globalAvg)**2,0)/totalSoste.length);
+
+  // Per porto
+  const portoStats = Object.values(byPorto).map(p => {
+    const avg = p.soste.reduce((a,b)=>a+b,0)/p.soste.length;
+    const detentionPct = (p.detention/p.count)*100;
+    return { ...p, avg, detentionPct };
+  }).sort((a,b)=>a.avg-b.avg);
+
+  return { destStats, portoStats, globalAvg, globalStd, totalWithData, freeTime: FREE_TIME_DEFAULT };
+}
+
+// Recupera sosta media per una destinazione specifica (per feature builder)
+function getSostaForDest(sostaStats, destName, modalita) {
+  if (!sostaStats) return 14;
+  const n = (destName||'').toLowerCase();
+  const match = sostaStats.destStats.find(d =>
+    (d.dest||'').toLowerCase().includes(n) || n.includes((d.dest||'').toLowerCase())
+  );
+  return match ? match.avg : sostaStats.globalAvg;
+}
+
+async function getClaudeInsight(payload) {
+  const {destName,modalita,tons,predicted,ci,trend,optimizer,anomaly,r2,mae,numOrders,hasDualDates,sostaInfo} = payload;
+
+  const optTop3=optimizer.slice(0,3).map((o,i)=>
+    `${i+1}. ${o.porto} / ${o.forwarder}: €${o.predicted.toFixed(2)}/ton (score ${o.score.toFixed(0)}/100, CV=${(o.cv*100).toFixed(1)}%, ${o.numOrders} ordini storici, lead time medio ${o.avgLeadTime.toFixed(1)} mesi)`
+  ).join('\n');
+
+  const trendTxt=trend
+    ? `Trend su rotta simile (${trend.totalOrders} ordini, R²=${trend.trendR2.toFixed(2)}): ${trend.trendPct>0?'+':''}${trend.trendPct.toFixed(1)}%/mese. Forecast +3 mesi: €${trend.forecasts[2]?.avg.toFixed(2)}/ton`
+    : 'Dati di trend insufficienti.';
+
+  const anomalyTxt=anomaly.isAnomaly
+    ? `⚠️ ANOMALIA RILEVATA: z-score=${anomaly.zScore.toFixed(2)}, deviazione ${anomaly.direction} del ${Math.abs(anomaly.percentDiff).toFixed(1)}% vs modello`
+    : `✓ Previsione nella norma (z-score=${anomaly.zScore.toFixed(2)})`;
+
+  const dateTxt=hasDualDates
+    ? 'Modello addestrato con date ordine E arrivo (lead time esplicito)'
+    : 'Modello addestrato solo con date ordine (lead time stimato)';
+
+  const sostaTxt=sostaInfo
+    ? `Sosta media storica per questa destinazione: ${sostaInfo.avg.toFixed(0)} giorni (±${sostaInfo.std.toFixed(0)}), max ${sostaInfo.max} giorni, ${sostaInfo.detentionPct.toFixed(0)}% delle BL oltre il free time di 14 giorni. Media per container: ${sostaInfo.avgPerCntr.toFixed(0)} giorni.${sostaInfo.avgTerminal!==null?` Tempo medio in terminal: ${sostaInfo.avgTerminal.toFixed(0)} gg.`:''}`
+    : 'Dati di sosta non disponibili (aggiungi DATA_RITIRO e DATA_RESTITUZIONE al foglio).';
+
+  const prompt=`Sei un esperto senior di logistica e supply chain. Analizza questa previsione di costo logistico in modo preciso e operativo, in italiano.
+
+PREVISIONE:
+- Destinazione: ${destName} | Modalità: ${modalita} | Tonnellate: ${tons}
+- Costo previsto: €${predicted.toFixed(2)}/ton | Range 90%: €${ci.low.toFixed(2)}–€${ci.high.toFixed(2)}/ton
+- Totale: €${(predicted*tons).toFixed(0)}
+- Qualità modello: R²=${r2.toFixed(3)}, MAE=€${mae.toFixed(2)}/ton (${numOrders} campioni)
+- ${dateTxt}
+
+ANOMALIA: ${anomalyTxt}
+
+OTTIMIZZAZIONE MULTI-VARIABILE (top 3 combinazioni porto/forwarder):
+${optTop3}
+
+TREND & FORECAST: ${trendTxt}
+
+SOSTA CONTAINER: ${sostaTxt}
+
+Scrivi un'analisi operativa in 4 paragrafi brevi:
+1. Affidabilità della previsione e range atteso
+2. Raccomandazione porto/forwarder con motivazione quantitativa
+3. Lettura del trend e implicazioni per il timing dell'ordine
+4. Considerazioni sulla sosta container: se i dati mostrano soste elevate o rischio detention, dai un consiglio concreto su come ottimizzare (negoziare free time, anticipare il ritiro, ecc.)
+
+Sii diretto, usa i numeri, evita frasi generiche.`;
+
+  const resp=await fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      model:'claude-sonnet-4-20250514',
+      max_tokens:1000,
+      messages:[{role:'user',content:prompt}]
+    })
+  });
+  const data=await resp.json();
+  return data.content?.[0]?.text||'Analisi non disponibile.';
+}
+
+/* ═══════════════════════════════════════════════════
+   SPARKLINE
+═══════════════════════════════════════════════════ */
+function TrendChart({series, forecasts, color='#00e5a0'}) {
+  if(!series||series.length<2) return null;
+  const all=[...series,...(forecasts||[])];
+  const vals=all.map(d=>d.avg);
+  const min=Math.min(...vals,...(forecasts||[]).map(f=>f.low)), max=Math.max(...vals,...(forecasts||[]).map(f=>f.high));
+  const range=max-min||1;
+  const W=300, H=80;
+  const toY=v=>H-((v-min)/range)*H*0.85-H*0.075;
+  const toX=i=>(i/(all.length+1))*W;
+
+  const histPts=series.map((d,i)=>[toX(i),toY(d.avg)]);
+  const forePts=(forecasts||[]).map((d,i)=>[toX(series.length+i),toY(d.avg)]);
+  const allPts=[...histPts,...forePts];
+
+  const histPath=histPts.map((p,i)=>`${i===0?'M':'L'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+  const forePath=forePts.length>0
+    ? 'M'+histPts[histPts.length-1].map(v=>v.toFixed(1)).join(',')+' '+forePts.map(p=>`L${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ')
+    : '';
+  const areaPath=histPath+` L${toX(series.length-1)},${H} L0,${H} Z`;
+
+  // Confidence band for forecast
+  const bandPath=forecasts&&forecasts.length>0
+    ? `M${histPts[histPts.length-1].map(v=>v.toFixed(1)).join(',')} `+
+      forecasts.map((f,i)=>`L${toX(series.length+i).toFixed(1)},${toY(f.high).toFixed(1)}`).join(' ')+
+      forecasts.slice().reverse().map((f,i)=>`L${toX(series.length+forecasts.length-1-i).toFixed(1)},${toY(f.low).toFixed(1)}`).join(' ')+
+      ' Z'
+    : '';
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="trend-svg" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="tg" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.25"/>
+          <stop offset="100%" stopColor={color} stopOpacity="0.02"/>
+        </linearGradient>
+      </defs>
+      {bandPath&&<path d={bandPath} fill="rgba(124,106,247,0.12)" stroke="none"/>}
+      <path d={areaPath} fill="url(#tg)"/>
+      <path d={histPath} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round"/>
+      {forePath&&<path d={forePath} fill="none" stroke="var(--accent2)" strokeWidth="2" strokeDasharray="5,3" strokeLinejoin="round"/>}
+      {histPts.map((p,i)=><circle key={i} cx={p[0]} cy={p[1]} r="2.5" fill={color}/>)}
+      {forePts.map((p,i)=><circle key={i} cx={p[0]} cy={p[1]} r="2.5" fill="var(--accent2)" strokeWidth="1.5" stroke="var(--bg)"/>)}
+    </svg>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   URLS
+═══════════════════════════════════════════════════ */
+const FOGLIO1_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vR-MthW0ItRfSSthoga_Tvd7w1_OMdDXZylZQhLjG5I0bk1cEGZjqPsFUt6I373L4oFpw156lvbvYHJ/pub?gid=0&single=true&output=csv';
+const FOGLIO2_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vR-MthW0ItRfSSthoga_Tvd7w1_OMdDXZylZQhLjG5I0bk1cEGZjqPsFUt6I373L4oFpw156lvbvYHJ/pub?gid=738284096&single=true&output=csv';
+
+/* ═══════════════════════════════════════════════════
+   MAIN APP
+═══════════════════════════════════════════════════ */
+function App() {
+  const [appState, setAppState] = useState('loading');
+  const [trainProgress, setTrainProgress] = useState(0);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [orders, setOrders] = useState([]);
+  const [destinations, setDestinations] = useState([]);
+  const [model, setModel] = useState(null);
+  const [modelMeta, setModelMeta] = useState({r2:0,mae:0,n:0,hasDualDates:false,hasSosta:false});
+  const [allAnomalies, setAllAnomalies] = useState([]);
+  const [sostaStats, setSostaStats] = useState(null);
+
+  const [activeTab, setActiveTab] = useState('previsione');
+  const [destInput, setDestInput] = useState('');
+  const [modalita, setModalita] = useState('');
+  const [tonsInput, setTonsInput] = useState('');
+
+  const [result, setResult] = useState(null);
+  const [isCalc, setIsCalc] = useState(false);
+  const [aiText, setAiText] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+
+  /* ── LOAD & TRAIN ── */
+  useEffect(()=>{
+    (async()=>{
+      try {
+        setAppState('loading'); setTrainProgress(5);
+        const [rows1] = await Promise.all([loadCSV(FOGLIO1_URL), loadCSV(FOGLIO2_URL)]);
+
+        // Rileva colonne date disponibili
+        const sampleRow=rows1[0]||{};
+        const keys=Object.keys(sampleRow);
+        const dateOrdineKey=keys.find(k=>/DATA.?ORDINE|DATA_ORDINE|ORDER.?DATE|ORDINE.?DATA/i.test(k))||
+                            keys.find(k=>/^DATA$/i.test(k))||
+                            keys.find(k=>/DATA/i.test(k)&&!/ARRIVO|ARRIVAL|RITIRO|RESTITUZIONE/i.test(k));
+        const dateArrivoKey=keys.find(k=>/DATA.?ARRIVO|ARRIVO.?DATA|DATA_ARRIVO|ARRIVAL/i.test(k));
+        const dateRitiroKey=keys.find(k=>/DATA.?RITIRO|RITIRO.?DATA|DATA_RITIRO|PICKUP/i.test(k));
+        const dateRestKey=keys.find(k=>/DATA.?REST|REST.?DATA|RESTITUZIONE|RETURN|DATA_REST/i.test(k));
+        const hasDualDates=!!(dateOrdineKey&&dateArrivoKey);
+        const hasSosta=!!(dateArrivoKey&&dateRestKey);
+
+        console.log('Date keys trovate:', {dateOrdineKey, dateArrivoKey, dateRitiroKey, dateRestKey, hasDualDates, hasSosta});
+
+        // Processa ordini
+        const validOrders=rows1
+          .filter(r=>(r.COMPLETO||'').toUpperCase()!=='NO')
+          .filter(r=>r.ORDINE&&r['€/TON'])
+          .map(r=>({
+            ...r,
+            _dateOrdine:      parseDate(r[dateOrdineKey]||''),
+            _dateArrivo:      parseDate(r[dateArrivoKey]||''),
+            _dateRitiro:      parseDate(r[dateRitiroKey]||''),
+            _dateRestituzione:parseDate(r[dateRestKey]||''),
+          }));
+
+        setOrders(validOrders);
+        setDestinations([...new Set(validOrders.map(r=>r.DESTINAZIONE).filter(Boolean))].sort());
+        setTrainProgress(30);
+
+        // Calcola statistiche sosta (indipendente dal modello)
+        const sosta = computeSostaStats(validOrders);
+        setSostaStats(sosta);
+
+        // Build dataset — include sosta media per destinazione come feature
+        const X=[], y=[];
+        validOrders.forEach(order=>{
+          const euroTon=parseFloat(order['€/TON']);
+          const tons=parseFloat(order.TON||0);
+          if(!euroTon||tons<=0||!order.PORTO||!PORT_COORDS[order.PORTO]) return;
+          if(!getCityCoords(order.DESTINAZIONE)) return;
+
+          const avgSosta=getSostaForDest(sosta, order.DESTINAZIONE, order["MODALITA'"]);
+          const features=buildFeatures(
+            order.DESTINAZIONE, order.PORTO, tons,
+            order._dateOrdine, order._dateArrivo, order["MODALITA'"], avgSosta
+          );
+          X.push(features); y.push(euroTon);
+        });
+
+        setTrainProgress(50);
+        if(X.length<10) throw new Error(`Solo ${X.length} campioni validi. Controlla DESTINAZIONE, PORTO, TON, €/TON.`);
+
+        setAppState('training');
+        await new Promise(r=>setTimeout(r,60));
+        setTrainProgress(65);
+
+        const reg=new LogisticRegressor();
+        reg.fit(X,y);
+        setTrainProgress(85);
+
+        // Anomaly detection su tutto il dataset
+        await new Promise(r=>setTimeout(r,40));
+        const anomalies=detectAnomalies(validOrders,reg);
+        setAllAnomalies(anomalies);
+
+        setModel(reg);
+        setModelMeta({r2:reg.r2,mae:reg.mae,n:X.length,hasDualDates,hasSosta});
+        setTrainProgress(100);
+        setAppState('ready');
+      } catch(err) {
+        console.error(err);
+        setErrorMsg(err.message);
+        setAppState('error');
+      }
+    })();
+  },[]);
+
+  /* ── CALCULATE ── */
+  const handleCalculate=useCallback(async()=>{
+    if(!destInput||!modalita||!tonsInput||!model) return;
+    setIsCalc(true); setResult(null); setAiText('');
+
+    try {
+      const tons=parseFloat(tonsInput);
+      const orderDate=new Date();
+
+      // Features con porto best storico come baseline
+      const destOrders=orders.filter(o=>
+        (o.DESTINAZIONE||'').toLowerCase().includes(destInput.toLowerCase())&&
+        o["MODALITA'"]=== modalita&&o['€/TON']
+      );
+      const portFreq={};
+      destOrders.forEach(o=>{ if(o.PORTO) portFreq[o.PORTO]=(portFreq[o.PORTO]||0)+1; });
+      const basePort=Object.entries(portFreq).sort((a,b)=>b[1]-a[1])[0]?.[0]||'VENEZIA';
+
+      const avgSosta = getSostaForDest(sostaStats, destInput, modalita);
+      const features=buildFeatures(destInput,basePort,tons,orderDate,null,modalita,avgSosta);
+      const ci=model.confidenceInterval(features,0.90);
+      const predicted=ci.pred;
+
+      // Anomaly check sulla previsione
+      const anomaly=model.anomalyScore(predicted,features);
+
+      // Trend + forecast
+      const trend=computeTrendAndForecast(orders,destInput,modalita,3);
+
+      // Multi-variable optimizer
+      const optimizer=multiVariableOptimize(model,destInput,tons,modalita,orders,null,sostaStats);
+
+      // Costi fissi medi da storico
+      let avgFissi=predicted*0.35;
+      if(destOrders.length>0) {
+        let tf=0,tc=0;
+        destOrders.forEach(o=>{
+          const t=parseFloat(o.TON||0);
+          if(!t) return;
+          const f=['FREE OUT','DELIVERY ORDER','CICLO TERMINAL','DOGANA','DIRITTO FISSO','FLEGT','VISITA MERCE','SOSTE','SVINCOLO']
+            .reduce((s,k)=>s+parseFloat(o[k]||0),0);
+          tf+=f/t; tc++;
+        });
+        if(tc>0) avgFissi=tf/tc;
+      }
+
+      // Sosta info per questa destinazione
+      const destSostaInfo = sostaStats?.destStats?.find(d =>
+        (d.dest||'').toLowerCase().includes(destInput.toLowerCase()) ||
+        destInput.toLowerCase().includes((d.dest||'').toLowerCase())
+      ) || null;
+
+      setResult({
+        predicted, ci, tons, destInput, modalita,
+        totalPred:predicted*tons,
+        totalLow:ci.low*tons,
+        totalHigh:ci.high*tons,
+        costiFissi:avgFissi*tons,
+        inland:(predicted-avgFissi)*tons,
+        bestPort:optimizer[0]?.porto||basePort,
+        bestForwarder:optimizer[0]?.forwarder||'N/D',
+        anomaly, trend, optimizer,
+        numHistOrders:destOrders.length,
+        sostaInfo: destSostaInfo,
+      });
+
+      // AI insight
+      setAiLoading(true);
+      try {
+        const insight=await getClaudeInsight({
+          destName:destInput, modalita, tons, predicted, ci,
+          trend, optimizer, anomaly,
+          r2:modelMeta.r2, mae:modelMeta.mae, numOrders:modelMeta.n,
+          hasDualDates:modelMeta.hasDualDates,
+          sostaInfo: destSostaInfo,
+        });
+        setAiText(insight);
+      } catch(e) { setAiText('Analisi AI non disponibile.'); }
+      finally { setAiLoading(false); }
+
+    } catch(err) {
+      console.error(err); alert('Errore: '+err.message);
+    } finally { setIsCalc(false); }
+  },[destInput,modalita,tonsInput,model,orders,modelMeta]);
+
+  /* ── LOADING ── */
+  if(appState==='loading'||appState==='training') return (
+    <div className="loading-screen">
+      <div style={{textAlign:'center'}}>
+        <div style={{fontFamily:'Syne,sans-serif',fontSize:'2rem',fontWeight:800,
+          background:'linear-gradient(135deg,#00e5a0,#7c6af7)',WebkitBackgroundClip:'text',
+          WebkitTextFillColor:'transparent',marginBottom:24}}>LogisticAI v2</div>
+        <div className="spinner" style={{margin:'0 auto 20px'}}/>
+        <p style={{color:'#8888aa',fontSize:'0.82rem',marginBottom:16}}>
+          {appState==='loading'?'Caricamento dati storici...':'Addestramento modello predittivo...'}
+        </p>
+        <div className="train-bar-wrap" style={{margin:'0 auto'}}>
+          <div className="train-bar-fill" style={{width:trainProgress+'%'}}/>
+        </div>
+        <p style={{color:'#555577',fontSize:'0.68rem',marginTop:8,textAlign:'right',width:260,margin:'8px auto 0'}}>{trainProgress}%</p>
+      </div>
+    </div>
+  );
+
+  if(appState==='error') return (
+    <div className="loading-screen">
+      <div style={{textAlign:'center',maxWidth:500,padding:'0 20px'}}>
+        <div style={{fontSize:'2.5rem',marginBottom:16}}>⚠️</div>
+        <h2 style={{fontFamily:'Syne,sans-serif',marginBottom:12}}>Errore di avvio</h2>
+        <div className="alert alert-danger" style={{textAlign:'left',marginBottom:16}}>
+          <span className="alert-icon">!</span>
+          <span className="alert-text">{errorMsg}</span>
+        </div>
+        <p style={{color:'#8888aa',fontSize:'0.78rem',lineHeight:1.6}}>
+          Colonne richieste nel Foglio 1: ORDINE, DESTINAZIONE, PORTO, TON, €/TON, MODALITA', COMPLETO<br/>
+          Colonne opzionali: DATA_ORDINE, DATA_ARRIVO (formato gg/mm/aaaa)
+        </p>
+        <button onClick={()=>window.location.reload()} style={{
+          marginTop:20,padding:'10px 24px',background:'var(--accent)',border:'none',
+          borderRadius:8,color:'#000',fontFamily:'Syne,sans-serif',fontWeight:700,cursor:'pointer'
+        }}>↺ Riprova</button>
+      </div>
+    </div>
+  );
+
+  const r2Color=modelMeta.r2>0.78?'var(--accent)':modelMeta.r2>0.55?'var(--warn)':'var(--danger)';
+  const r2Label=modelMeta.r2>0.78?'Alta':'Media';
+
+  return (
+    <div className="shell">
+      {/* HEADER */}
+      <header className="header">
+        <div>
+          <div className="logo">LogisticAI <span style={{fontSize:'1rem',fontWeight:600,color:'var(--accent2)'}}>v3</span></div>
+          <div className="logo-sub">Previsione costi · ML + AI generativa</div>
+        </div>
+        <div className="status-pill">
+          <div className="status-dot"/>
+          {orders.length} ordini · {modelMeta.hasDualDates?'date doppie ✓':'solo data ordine'} · {modelMeta.hasSosta?'soste ✓':'soste —'}
+        </div>
+      </header>
+
+      {/* MODEL STATS */}
+      <div className="stat-row">
+        <div className="stat-box">
+          <div className="stat-label">Accuratezza modello</div>
+          <div className="stat-value" style={{color:r2Color}}>R²&nbsp;{(modelMeta.r2*100).toFixed(0)}%</div>
+          <div className="stat-sub">Qualità {r2Label}</div>
+        </div>
+        <div className="stat-box">
+          <div className="stat-label">Errore medio MAE</div>
+          <div className="stat-value">€{modelMeta.mae.toFixed(2)}</div>
+          <div className="stat-sub">per tonnellata</div>
+        </div>
+        <div className="stat-box">
+          <div className="stat-label">Campioni training</div>
+          <div className="stat-value">{modelMeta.n}</div>
+          <div className="stat-sub">ordini validi</div>
+        </div>
+        <div className="stat-box">
+          <div className="stat-label">Anomalie rilevate</div>
+          <div className="stat-value" style={{color:allAnomalies.length>0?'var(--warn)':'var(--accent)'}}>
+            {allAnomalies.length}
+          </div>
+          <div className="stat-sub">ordini storici</div>
+        </div>
+      </div>
+
+      {/* TABS */}
+      <div className="tabs">
+        {[['previsione','⚡ Previsione'],['anomalie','⚠️ Anomalie'],['trend','📈 Trend'],['sosta','🚢 Soste']].map(([id,label])=>(
+          <button key={id} className={`tab-btn${activeTab===id?' active':''}`} onClick={()=>setActiveTab(id)}>{label}</button>
+        ))}
+      </div>
+
+      {/* ── TAB: PREVISIONE ── */}
+      {activeTab==='previsione'&&(
+        <>
+          <div className="card">
+            <div className="card-title">Parametri previsione <div className="card-title-line"/></div>
+            <div className="form-grid">
+              <div className="field">
+                <label className="field-label">Destinazione</label>
+                <input type="text" value={destInput} onChange={e=>setDestInput(e.target.value)}
+                  placeholder="es. Milano, Napoli..." list="dest-list"/>
+                <datalist id="dest-list">{destinations.map(d=><option key={d} value={d}/>)}</datalist>
+              </div>
+              <div className="field">
+                <label className="field-label">Modalità</label>
+                <select value={modalita} onChange={e=>setModalita(e.target.value)}>
+                  <option value="">Seleziona...</option>
+                  <option value="CONTAINER">Container</option>
+                  <option value="TRUCK">Camion</option>
+                </select>
+              </div>
+              <div className="field" style={{gridColumn:'1/-1'}}>
+                <label className="field-label">Tonnellate</label>
+                <input type="number" value={tonsInput} onChange={e=>setTonsInput(e.target.value)} placeholder="es. 25" step="0.1"/>
+              </div>
+            </div>
+            <button className="btn-primary" onClick={handleCalculate}
+              disabled={!destInput||!modalita||!tonsInput||isCalc}>
+              {isCalc?<><div className="spinner" style={{width:18,height:18,borderWidth:2}}/>Elaborazione...</>:'⚡ Calcola Previsione AI'}
+            </button>
+          </div>
+
+          {result&&(
+            <div className="fade-in">
+              {/* HERO */}
+              <div className="result-hero">
+                <div>
+                  <div className="result-main-label">Costo previsto</div>
+                  <div className="result-main-value">€{result.predicted.toFixed(2)}</div>
+                  <div className="result-main-sub">per tonnellata · totale ≈ <strong>€{result.totalPred.toFixed(0)}</strong></div>
+                </div>
+                <div className="ci-block">
+                  <div className="ci-label">Intervallo confidenza 90%</div>
+                  <div className="ci-range">€{result.ci.low.toFixed(2)} – €{result.ci.high.toFixed(2)}</div>
+                  <div className="ci-bar">
+                    <div className="ci-fill" style={{
+                      left:`${Math.max(0,(result.ci.low/Math.max(result.ci.high,1))*70)}%`,
+                      width:`${Math.min(100,(result.ci.high-result.ci.low)/Math.max(result.ci.high,1)*120)}%`
+                    }}/>
+                  </div>
+                </div>
+              </div>
+
+              {/* ANOMALY ALERTS */}
+              {result.anomaly.isExtreme&&(
+                <div className="alert alert-danger">
+                  <span className="alert-icon">🚨</span>
+                  <span className="alert-text"><strong>Anomalia estrema</strong> — Previsione devia {Math.abs(result.anomaly.percentDiff).toFixed(1)}% dalla norma (z-score {result.anomaly.zScore.toFixed(2)}). Verifica i parametri o segnala al team.</span>
+                </div>
+              )}
+              {result.anomaly.isAnomaly&&!result.anomaly.isExtreme&&(
+                <div className="alert alert-warn">
+                  <span className="alert-icon">⚠️</span>
+                  <span className="alert-text"><strong>Valore insolito</strong> — Costo {result.anomaly.direction} del {Math.abs(result.anomaly.percentDiff).toFixed(1)}% rispetto allo storico (z-score {result.anomaly.zScore.toFixed(2)}).</span>
+                </div>
+              )}
+              {!result.anomaly.isAnomaly&&(
+                <div className="alert alert-ok">
+                  <span className="alert-icon">✓</span>
+                  <span className="alert-text">Previsione nella norma storica (z-score {result.anomaly.zScore.toFixed(2)}). Nessuna anomalia rilevata.</span>
+                </div>
+              )}
+              {result.numHistOrders===0&&(
+                <div className="alert alert-info">
+                  <span className="alert-icon">ℹ</span>
+                  <span className="alert-text">Destinazione nuova — nessun ordine storico esatto. Previsione basata su rotte geograficamente simili.</span>
+                </div>
+              )}
+
+              {/* BREAKDOWN */}
+              <div className="breakdown-grid">
+                <div className="breakdown-item">
+                  <div className="b-label">Costi fissi stimati</div>
+                  <div className="b-value text-accent2">€{result.costiFissi.toFixed(0)}</div>
+                  <div className="b-sub">porto · dogana · servizi</div>
+                </div>
+                <div className="breakdown-item">
+                  <div className="b-label">Inland stimato</div>
+                  <div className="b-value text-accent">€{result.inland.toFixed(0)}</div>
+                  <div className="b-sub">porto → {result.destInput}</div>
+                </div>
+                <div className="breakdown-item">
+                  <div className="b-label">Totale ({result.tons} ton)</div>
+                  <div className="b-value text-accent">€{result.totalPred.toFixed(0)}</div>
+                  <div className="b-sub">range: €{result.totalLow.toFixed(0)}–€{result.totalHigh.toFixed(0)}</div>
+                </div>
+              </div>
+
+              {/* SOSTA ALERT */}
+              {result.sostaInfo && (()=>{
+                const s = result.sostaInfo;
+                const FREE_TIME = 14;
+                const isHigh = s.avg > FREE_TIME * 2;
+                const isWarn = s.avg > FREE_TIME && !isHigh;
+                return (
+                  <div className="sosta-alert-inline">
+                    <span style={{fontSize:'1.1rem',flexShrink:0}}>🚢</span>
+                    <div>
+                      <strong>Sosta container storica — {result.destInput}</strong><br/>
+                      Sosta media: <strong>{s.avg.toFixed(0)} giorni</strong> (±{s.std.toFixed(0)}) su {s.count} BL storiche ·{' '}
+                      {s.avgPerCntr && <>media per container: <strong>{s.avgPerCntr.toFixed(0)} gg</strong> ·{' '}</>}
+                      {s.avgTerminal!==null && <>tempo in terminal: <strong>{s.avgTerminal.toFixed(0)} gg</strong> ·{' '}</>}
+                      {s.avgUtilizzo!==null && <>utilizzo: <strong>{s.avgUtilizzo.toFixed(0)} gg</strong> ·{' '}</>}
+                      BL oltre free time ({FREE_TIME}gg): <strong style={{color:s.detentionPct>30?'var(--danger)':'inherit'}}>{s.detentionPct.toFixed(0)}%</strong>
+                      {isHigh && <><br/><span style={{color:'var(--danger)'}}>⚠️ Sosta elevata: valuta di negoziare un free time esteso con l'armatore o di anticipare il ritiro.</span></>}
+                      {isWarn && <><br/><span style={{color:'var(--warn)'}}>⚡ Sosta sopra la media: monitora i tempi di ritiro per evitare detention.</span></>}
+                    </div>
+                  </div>
                 );
-                
-                let avgCostiFissiPerTon = 0;
-                if (ordersForAvg.length > 0) {
-                  console.log(`Calcolo costi fissi medi da ${ordersForAvg.length} ordini ${modalita} da ${porto}`);
-                  
-                  let totalCostiFissiPerTon = 0;
-                  let count = 0;
-                  
-                  ordersForAvg.forEach(order => {
-                    const tons = parseFloat(order.TON || 0);
-                    if (tons <= 0) return;
-                    
-                    const freeOut = parseFloat(order['FREE OUT'] || 0);
-                    const deliveryOrder = parseFloat(order['DELIVERY ORDER'] || 0);
-                    const cicloTerminal = parseFloat(order['CICLO TERMINAL'] || 0);
-                    const dogana = parseFloat(order['DOGANA'] || 0);
-                    const dirittoFisso = parseFloat(order['DIRITTO FISSO'] || 0);
-                    const flegt = parseFloat(order['FLEGT'] || 0);
-                    const visitaMerce = parseFloat(order['VISITA MERCE'] || 0);
-                    const soste = parseFloat(order['SOSTE'] || 0);
-                    const svincolo = parseFloat(order['SVINCOLO'] || 0);
-                    
-                    const costiFissiTotali = freeOut + deliveryOrder + cicloTerminal + dogana + 
-                                           dirittoFisso + flegt + visitaMerce + soste + svincolo;
-                    
-                    totalCostiFissiPerTon += (costiFissiTotali / tons);
-                    count++;
-                  });
-                  
-                  avgCostiFissiPerTon = totalCostiFissiPerTon / count;
-                  console.log('Costi fissi medi:', avgCostiFissiPerTon.toFixed(2), '€/ton');
-                } else {
-                  // Fallback: usa media generale per la modalità
-                  const allOrdersMode = excelData.filter(o => o["MODALITA'"] === modalita && o['€/TON']);
-                  if (allOrdersMode.length > 0) {
-                    let total = 0;
-                    let count = 0;
-                    allOrdersMode.forEach(order => {
-                      const tons = parseFloat(order.TON || 0);
-                      if (tons <= 0) return;
-                      const euroTon = parseFloat(order['€/TON'] || 0);
-                      const inland = parseFloat(order['INLAND'] || 0);
-                      const costiFissiPerTon = euroTon - (inland / tons);
-                      if (costiFissiPerTon > 0) {
-                        total += costiFissiPerTon;
-                        count++;
-                      }
-                    });
-                    avgCostiFissiPerTon = count > 0 ? total / count : 30; // default 30€/ton
-                  } else {
-                    avgCostiFissiPerTon = 30; // Default generico
-                  }
-                  console.log('Costi fissi stimati (nessun ordine da questo porto):', avgCostiFissiPerTon.toFixed(2), '€/ton');
-                }
-                
-                const inlandPerTon = inlandTariffario / ton;
-                const costoTotalePerTon = avgCostiFissiPerTon + inlandPerTon;
-                
-                console.log('=== RIEPILOGO TARIFFARIO ===');
-                console.log(`Costi fissi: €${avgCostiFissiPerTon.toFixed(2)}/ton × ${ton} = €${(avgCostiFissiPerTon * ton).toFixed(2)}`);
-                console.log(`INLAND: €${inlandPerTon.toFixed(2)}/ton × ${ton} = €${inlandTariffario.toFixed(2)}`);
-                console.log(`TOTALE: €${(costoTotalePerTon * ton).toFixed(2)}`);
-                
-                setRisultato({
-                  porto: porto,
-                  forwarder: partner,
-                  costiFissi: (avgCostiFissiPerTon * ton).toFixed(2),
-                  inland: inlandTariffario.toFixed(2),
-                  costoTotale: (costoTotalePerTon * ton).toFixed(2),
-                  costoPerTon: costoTotalePerTon.toFixed(2),
-                  tonnellate: ton,
-                  numOrdiniStorici: ordersForAvg.length,
-                  isEstimated: false,
-                  isTariffario: true,
-                  referenceDestinations: []
-                });
-                
-                setIsCalculating(false);
-                return;
-              }
-              
-              // Altrimenti, logica originale con ordini storici
-              if (ordersToUse.length === 0) {
-                alert('Nessun ordine trovato');
-                setIsCalculating(false);
-                return;
-              }
-              
-              const combinations = {};
-              console.log('=== CREAZIONE COMBINAZIONI ===');
-              console.log('Numero ordini da processare:', ordersToUse.length);
-              ordersToUse.forEach((order, idx) => {
-                console.log(`Ordine ${idx + 1}:`, {
-                  ordine: order.ORDINE,
-                  porto: order.PORTO,
-                  forwarder: order.FORWARDER,
-                  euroTon: order['€/TON'],
-                  destinazione: order.DESTINAZIONE
-                });
-                
-                const key = `${order.PORTO}|${order.FORWARDER}`;
-                console.log(`  Key creata: "${key}"`);
-                
-                if (!combinations[key]) {
-                  combinations[key] = { 
-                    porto: order.PORTO, 
-                    forwarder: order.FORWARDER, 
-                    costs: [],
-                    destinations: []
-                  };
-                  console.log(`  ✓ Nuova combinazione creata`);
-                }
-                combinations[key].costs.push(parseFloat(order['€/TON']));
-                if (!combinations[key].destinations.includes(order.DESTINAZIONE)) {
-                  combinations[key].destinations.push(order.DESTINAZIONE);
-                }
-              });
-              
-              console.log('Totale combinazioni create:', Object.keys(combinations).length);
-              console.log('Combinazioni:', Object.keys(combinations));
-              
-              // Verifica che ci siano combinazioni valide
-              if (Object.keys(combinations).length === 0) {
-                alert('Nessuna combinazione porto/forwarder trovata');
-                setIsCalculating(false);
-                return;
-              }
-              
-              const portCoords = {
-                'VENEZIA': { lat: 45.4408, lon: 12.3155 },
-                'TRIESTE': { lat: 45.6495, lon: 13.7768 },
-                'GENOVA': { lat: 44.4056, lon: 8.9463 },
-                'LIVORNO': { lat: 43.5485, lon: 10.3106 },
-                'RAVENNA': { lat: 44.4184, lon: 12.2035 },
-                'NAPOLI': { lat: 40.8518, lon: 14.2681 },
-                'SALERNO': { lat: 40.6824, lon: 14.7681 },
-                'CIVITAVECCHIA': { lat: 42.0938, lon: 11.7967 }
-              };
-              
-              let bestOption = null;
-              let lowestCost = Infinity;
-              
-              if (isEstimated) {
-                const targetCoords = await getCoordinates(destinazione);
-                console.log('=== CALCOLO DISTANZE PORTI ===');
-                
-                // PARALLELO: Calcola distanze di tutti i porti insieme
-                const portDistancePromises = Object.values(combinations).map(async (combo) => {
-                  const avgCost = combo.costs.reduce((a, b) => a + b, 0) / combo.costs.length;
-                  const portCoord = portCoords[combo.porto.toUpperCase()];
-                  
-                  if (portCoord && targetCoords) {
-                    const distance = await calculateDistance(targetCoords, portCoord);
-                    console.log(`Porto ${combo.porto}:`, {
-                      distanza_km: distance.toFixed(1),
-                      costo_medio: avgCost.toFixed(2)
-                    });
-                    
-                    return {
-                      ...combo,
-                      avgCost,
-                      numOrders: combo.costs.length,
-                      portDistance: distance
-                    };
-                  }
-                  return null;
-                });
-                
-                const combosWithDistance = (await Promise.all(portDistancePromises)).filter(Boolean);
-                
-                // Per le STIME: ordina SOLO per distanza porto (il costo è meno importante)
-                combosWithDistance.sort((a, b) => a.portDistance - b.portDistance);
-                
-                console.log('--- Porti ordinati per distanza ---');
-                combosWithDistance.forEach((c, i) => {
-                  console.log(`${i+1}. ${c.porto} - ${c.portDistance.toFixed(0)}km - €${c.avgCost.toFixed(2)}/ton`);
-                });
-                
-                if (combosWithDistance.length > 0) {
-                  bestOption = combosWithDistance[0];
-                  console.log('✓ PORTO SCELTO:', bestOption.porto, '-', bestOption.portDistance.toFixed(0), 'km');
-                } else {
-                  alert('Impossibile calcolare la distanza dai porti');
-                  setIsCalculating(false);
-                  return;
-                }
-                
-              } else {
-                Object.values(combinations).forEach(combo => {
-                  const avgCost = combo.costs.reduce((a, b) => a + b, 0) / combo.costs.length;
-                  if (avgCost < lowestCost) {
-                    lowestCost = avgCost;
-                    bestOption = { ...combo, avgCost, numOrders: combo.costs.length };
-                  }
-                });
-              }
-              
-              // Verifica finale che bestOption sia stato trovato
-              if (!bestOption) {
-                alert('Impossibile determinare la migliore opzione');
-                setIsCalculating(false);
-                return;
-              }
-              
-              const ordersForChosen = ordersToUse.filter(order => 
-                order.PORTO === bestOption.porto && 
-                order.FORWARDER === bestOption.forwarder
-              );
-              
-              console.log('Ordini per porto+forwarder scelto:', ordersForChosen.length);
-              
-              // Calcola costi PER TONNELLATA (non totali!)
-              let totalCostiFissiPerTon = 0;
-              let totalInlandPerTon = 0;
-              let totalOrders = 0;
-              
-              ordersForChosen.forEach((order, idx) => {
-                const tons = parseFloat(order.TON || 0);
-                if (tons <= 0) {
-                  console.log(`Ordine ${order.ORDINE} saltato: tonnellate = ${tons}`);
-                  return;
-                }
-                
-                const freeOut = parseFloat(order['FREE OUT'] || 0);
-                const deliveryOrder = parseFloat(order['DELIVERY ORDER'] || 0);
-                const cicloTerminal = parseFloat(order['CICLO TERMINAL'] || 0);
-                const dogana = parseFloat(order['DOGANA'] || 0);
-                const dirittoFisso = parseFloat(order['DIRITTO FISSO'] || 0);
-                const flegt = parseFloat(order['FLEGT'] || 0);
-                const visitaMerce = parseFloat(order['VISITA MERCE'] || 0);
-                const soste = parseFloat(order['SOSTE'] || 0);
-                const svincolo = parseFloat(order['SVINCOLO'] || 0);
-                const inland = parseFloat(order['INLAND'] || 0);
-                
-                const costiFissiTotali = freeOut + deliveryOrder + cicloTerminal + dogana + 
-                                   dirittoFisso + flegt + visitaMerce + soste + svincolo;
-                
-                // NORMALIZZA per tonnellata
-                const costiFissiPerTon = costiFissiTotali / tons;
-                const inlandPerTon = inland / tons;
-                
-                console.log(`Ordine ${idx+1} (${order.ORDINE}) - ${tons} ton`);
-                console.log(`  Costi fissi: €${costiFissiTotali.toFixed(2)} → €${costiFissiPerTon.toFixed(2)}/ton`);
-                console.log(`  INLAND: €${inland.toFixed(2)} → €${inlandPerTon.toFixed(2)}/ton`);
-                
-                totalCostiFissiPerTon += costiFissiPerTon;
-                totalInlandPerTon += inlandPerTon;
-                totalOrders++;
-              });
-              
-              const avgCostiFissiPerTon = totalCostiFissiPerTon / totalOrders;
-              const avgInlandPerTon = totalInlandPerTon / totalOrders;
-              
-              console.log('--- MEDIE PER TONNELLATA ---');
-              console.log('MEDIA Costi Fissi:', avgCostiFissiPerTon.toFixed(2), '€/ton');
-              console.log('MEDIA INLAND:', avgInlandPerTon.toFixed(2), '€/ton');
-              
-              // Ora moltiplica per le tonnellate richieste
-              // ton già dichiarato all'inizio
-              const costiFissiTotali = avgCostiFissiPerTon * ton;
-              const inlandTotale = avgInlandPerTon * ton;
-              
-              let adjustedInlandPerTon = avgInlandPerTon;
-              if (isEstimated && referenceDestinations.length > 0) {
-                const targetCoords = await getCoordinates(destinazione);
-                
-                let avgPortDistToRef = 0;
-                let countDistances = 0;
-                
-                for (const order of ordersForChosen) {
-                  const refCoords = await getCoordinates(order.DESTINAZIONE);
-                  const portCoord = portCoords[bestOption.porto.toUpperCase()];
-                  if (refCoords && portCoord) {
-                    const dist = await calculateDistance(portCoord, refCoords);
-                    avgPortDistToRef += dist;
-                    countDistances++;
-                  }
-                }
-                
-                if (countDistances > 0) {
-                  avgPortDistToRef = avgPortDistToRef / countDistances;
-                  
-                  const portCoord = portCoords[bestOption.porto.toUpperCase()];
-                  if (portCoord && targetCoords) {
-                    const portDistToTarget = await calculateDistance(portCoord, targetCoords);
-                    const distanceRatio = portDistToTarget / avgPortDistToRef;
-                    adjustedInlandPerTon = avgInlandPerTon * distanceRatio;
-                    
-                    console.log('=== STIMA INLAND ===');
-                    console.log('INLAND medio storico:', avgInlandPerTon.toFixed(2), '€/ton');
-                    console.log('Distanza media porto→destinazioni storiche:', avgPortDistToRef.toFixed(0), 'km');
-                    console.log('Distanza porto→target:', portDistToTarget.toFixed(0), 'km');
-                    console.log('INLAND stimato:', adjustedInlandPerTon.toFixed(2), '€/ton');
-                  }
-                }
-              }
-              
-              // Ricalcola i totali con l'INLAND aggiustato
-              const finalCostiFissi = avgCostiFissiPerTon * ton;
-              const finalInland = adjustedInlandPerTon * ton;
-              const costoTotale = finalCostiFissi + finalInland;
-              
-              console.log('=== CALCOLO FINALE ===');
-              console.log(`Per ${ton} tonnellate:`);
-              console.log(`Costi Fissi: €${avgCostiFissiPerTon.toFixed(2)}/ton × ${ton} = €${finalCostiFissi.toFixed(2)}`);
-              console.log(`INLAND: €${adjustedInlandPerTon.toFixed(2)}/ton × ${ton} = €${finalInland.toFixed(2)}`);
-              console.log(`TOTALE: €${costoTotale.toFixed(2)}`);
-              
-              setRisultato({
-                porto: bestOption.porto,
-                forwarder: bestOption.forwarder,
-                costiFissi: finalCostiFissi.toFixed(2),
-                inland: finalInland.toFixed(2),
-                costoTotale: costoTotale.toFixed(2),
-                costoPerTon: (costoTotale / ton).toFixed(2),
-                tonnellate: ton,
-                numOrdiniStorici: bestOption.numOrders,
-                isEstimated: isEstimated,
-                isTariffario: false,
-                referenceDestinations: referenceDestinations
-              });
-              
-            } catch (error) {
-              console.error('Errore calcolo:', error);
-              alert('Errore nel calcolo');
-            } finally {
-              setIsCalculating(false);
-            }
-          };
-
-          if (isLoading) {
-            return (
-              <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
-                <div className="text-center">
-                  <Loader />
-                  <p className="text-gray-600 text-lg mt-4">Caricamento dati...</p>
+              })()}
+              {!result.sostaInfo && modelMeta.hasSosta===false && (
+                <div className="alert alert-info">
+                  <span className="alert-icon">🚢</span>
+                  <span className="alert-text">Aggiungi <strong>DATA_RITIRO</strong> e <strong>DATA_RESTITUZIONE</strong> al foglio per vedere l'analisi sosta container.</span>
                 </div>
-              </div>
-            );
-          }
+              )}
 
-          if (dataError) {
-            return (
-              <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-                <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md">
-                  <AlertCircle />
-                  <h2 className="text-xl font-bold mb-4">Errore Caricamento</h2>
-                  <p className="text-gray-600 mb-4">Impossibile caricare i dati.</p>
-                  <div className="bg-red-50 p-3 rounded mb-4">
-                    <p className="text-sm text-red-800">{errorMessage}</p>
+              {/* MULTI-VARIABLE OPTIMIZER */}
+              {result.optimizer.length>0&&(
+                <div className="card">
+                  <div className="card-title">Ottimizzazione multi-variabile <div className="card-title-line"/>
+                    <span className="text-muted" style={{fontSize:'0.68rem'}}>costo 45% · affidabilità 30% · volume 15% · velocità 10%</span>
                   </div>
-                  <p className="text-sm text-gray-600 mb-4">Apri Console (F12) per dettagli.</p>
-                  <button onClick={loadData} className="w-full bg-indigo-600 text-white py-3 rounded-lg">Riprova</button>
+                  <div className="opt-matrix">
+                    {result.optimizer.slice(0,6).map((opt,i)=>(
+                      <div key={i} className={`opt-cell${i===0?' opt-best':i===1?' opt-second':''}`}>
+                        <div className="opt-cell-port">{i===0?'★ ':''}{opt.porto}</div>
+                        <div className="opt-cell-cost" style={{color:i===0?'var(--accent)':i===1?'var(--accent2)':'var(--text)'}}>
+                          €{opt.predicted.toFixed(2)}<span style={{fontSize:'0.65rem',color:'var(--text2)'}}>/ton</span>
+                        </div>
+                        <div className="opt-cell-detail">
+                          {opt.forwarder}<br/>
+                          CV {(opt.cv*100).toFixed(1)}% · {opt.numOrders} ordini<br/>
+                          lead time {opt.avgLeadTime.toFixed(1)} mesi
+                        </div>
+                        <div className="opt-score-bar">
+                          <div className="opt-score-fill" style={{width:`${opt.score}%`}}/>
+                        </div>
+                        <div style={{fontSize:'0.6rem',color:'var(--text2)',marginTop:4,textAlign:'right'}}>
+                          score {opt.score.toFixed(0)}/100
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            );
-          }
+              )}
 
-          return (
-            <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-              <div className="max-w-3xl mx-auto">
-                <div className="bg-white rounded-2xl shadow-xl p-8 mb-6">
-                  <div className="flex items-center gap-3 mb-6">
-                    <Package />
-                    <h1 className="text-3xl font-bold text-gray-800">Calcolo Costi Logistici</h1>
+              {/* TREND + FORECAST */}
+              {result.trend&&(
+                <div className="card">
+                  <div className="card-title">
+                    Trend & Forecast <div className="card-title-line"/>
+                    <span style={{fontSize:'0.75rem',fontWeight:600,
+                      color:result.trend.trendPct>2?'var(--danger)':result.trend.trendPct<-2?'var(--accent)':'var(--text2)'}}>
+                      {result.trend.trendPct>0?'▲':'▼'}{Math.abs(result.trend.trendPct).toFixed(1)}%/mese
+                    </span>
                   </div>
-
-                  <div className="bg-green-50 border-l-4 border-green-500 p-4 mb-6">
-                    <p className="text-sm text-green-800">
-                      <strong>✓ Connesso</strong>
-                    </p>
-                    <p className="text-xs text-green-700 mt-1">
-                      Foglio 1: {excelData.length} ordini • Foglio 2: {tariffarioData ? tariffarioData.length : 0} tariffe
-                    </p>
-                  </div>
-
-                  {suggestedDestinations.length > 0 && (
-                    <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-6">
-                      <div className="flex items-center justify-between mb-2">
-                        <p className="text-sm font-semibold text-blue-800">
-                          💡 Suggerimenti Tariffario
-                        </p>
-                        <button
-                          onClick={() => setSuggestedDestinations([])}
-                          className="text-xs text-blue-600 hover:text-blue-800"
-                        >
-                          Nascondi
-                        </button>
-                      </div>
-                      <p className="text-xs text-blue-700 mb-3">
-                        Queste destinazioni compaiono spesso (3+). Aggiungile al Foglio 2 per calcoli istantanei:
-                      </p>
-                      <div className="bg-white rounded p-3 max-h-60 overflow-y-auto">
-                        <table className="w-full text-xs">
-                          <thead>
-                            <tr className="border-b">
-                              <th className="text-left py-1 pr-2">Destinazione</th>
-                              <th className="text-left py-1 px-2">Tipo</th>
-                              <th className="text-center py-1 px-2">×</th>
-                              <th className="text-left py-1 px-2">Porto</th>
-                              <th className="text-right py-1 pl-2">Costo Medio</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {suggestedDestinations.map((s, i) => (
-                              <tr key={i} className="border-b hover:bg-gray-50">
-                                <td className="py-2 pr-2 text-gray-800">{s.destinazione}</td>
-                                <td className="py-2 px-2 text-gray-600">{s.modalita}</td>
-                                <td className="py-2 px-2 text-center font-semibold text-blue-600">{s.occorrenze}</td>
-                                <td className="py-2 px-2 text-gray-600">{s.portoComune}</td>
-                                <td className="py-2 pl-2 text-right font-semibold text-green-700">€{s.costoMedio}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                      <p className="text-xs text-blue-600 mt-2">
-                        📋 Copia questi valori nel Foglio 2: Porto | Destinazione | Tipo | Costo | Partner
-                      </p>
+                  <div style={{display:'flex',gap:20,flexWrap:'wrap',marginBottom:12}}>
+                    <div>
+                      <div style={{fontSize:'0.63rem',color:'var(--text2)'}}>Ordini analizzati</div>
+                      <div style={{fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:'1.2rem',color:'var(--accent)'}}>{result.trend.totalOrders}</div>
                     </div>
+                    <div>
+                      <div style={{fontSize:'0.63rem',color:'var(--text2)'}}>Slope mensile</div>
+                      <div style={{fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:'1.2rem',color:result.trend.slope>0?'var(--danger)':'var(--accent)'}}>
+                        {result.trend.slope>0?'+':''}€{result.trend.slope.toFixed(2)}/mese
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{fontSize:'0.63rem',color:'var(--text2)'}}>R² trend</div>
+                      <div style={{fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:'1.2rem',color:'var(--text2)'}}>{(result.trend.trendR2*100).toFixed(0)}%</div>
+                    </div>
+                    {result.trend.forecasts[2]&&(
+                      <div>
+                        <div style={{fontSize:'0.63rem',color:'var(--text2)'}}>Forecast +3 mesi</div>
+                        <div style={{fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:'1.2rem',color:'var(--accent2)'}}>
+                          €{result.trend.forecasts[2].avg.toFixed(2)}/ton
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="trend-chart">
+                    <TrendChart series={result.trend.series} forecasts={result.trend.forecasts}
+                      color={result.trend.trendPct>2?'#f76a6a':result.trend.trendPct<-2?'#00e5a0':'#7c6af7'}/>
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',marginTop:4,fontSize:'0.6rem',color:'var(--text2)'}}>
+                    <span>{result.trend.series[0]?.label}</span>
+                    <span style={{color:'var(--accent2)'}}>— — forecast</span>
+                    <span style={{color:'var(--accent2)'}}>{result.trend.forecasts[result.trend.forecasts.length-1]?.label}</span>
+                  </div>
+
+                  {/* STAGIONALITÀ */}
+                  {result.trend.seasonality.length>2&&(
+                    <>
+                      <div className="divider"/>
+                      <div style={{fontSize:'0.68rem',color:'var(--text2)',marginBottom:8,letterSpacing:'0.05em'}}>STAGIONALITÀ MENSILE</div>
+                      <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+                        {result.trend.seasonality.map(s=>(
+                          <div key={s.month} style={{
+                            flex:'0 0 auto',textAlign:'center',
+                            padding:'6px 10px',borderRadius:6,
+                            background:s.relDiff>5?'rgba(247,106,106,0.15)':s.relDiff<-5?'rgba(0,229,160,0.15)':'var(--surface2)',
+                            border:`1px solid ${s.relDiff>5?'rgba(247,106,106,0.3)':s.relDiff<-5?'rgba(0,229,160,0.3)':'var(--border)'}`,
+                          }}>
+                            <div style={{fontSize:'0.6rem',color:'var(--text2)'}}>{s.name}</div>
+                            <div style={{fontFamily:'Syne,sans-serif',fontSize:'0.85rem',fontWeight:700,
+                              color:s.relDiff>5?'var(--danger)':s.relDiff<-5?'var(--accent)':'var(--text)'}}>
+                              {s.relDiff>0?'+':''}{s.relDiff.toFixed(0)}%
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
                   )}
+                </div>
+              )}
 
-                  <div className="space-y-6">
-                    <div>
-                      <label className="block mb-2 font-semibold flex items-center gap-2">
-                        <MapPin />
-                        Destinazione
-                      </label>
-                      <input
-                        type="text"
-                        value={destinazione}
-                        onChange={(e) => setDestinazione(e.target.value)}
-                        placeholder="es. Milano"
-                        list="dests"
-                        className="w-full px-4 py-3 border rounded-lg"
-                      />
-                      <datalist id="dests">
-                        {availableDestinations.map(d => <option key={d} value={d} />)}
-                      </datalist>
+              {/* AI INSIGHT */}
+              <div className="ai-box">
+                <div className="ai-header">
+                  <span className="ai-badge">CLAUDE AI</span>
+                  <span style={{color:'var(--text2)',fontSize:'0.72rem'}}>analisi contestuale generativa</span>
+                </div>
+                {aiLoading
+                  ? <div className="thinking"><div className="dots"><span>●</span><span>●</span><span>●</span></div>Analisi in corso...</div>
+                  : <div className="ai-text">{aiText}</div>
+                }
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── TAB: ANOMALIE ── */}
+      {activeTab==='anomalie'&&(
+        <div className="card fade-in">
+          <div className="card-title">Anomalie nel dataset storico <div className="card-title-line"/>
+            <span style={{fontSize:'0.72rem',color:'var(--text2)'}}>{allAnomalies.length} ordini fuori norma</span>
+          </div>
+          {allAnomalies.length===0?(
+            <div className="alert alert-ok"><span className="alert-icon">✓</span>
+              <span className="alert-text">Nessuna anomalia rilevata nel dataset storico. Tutti gli ordini sono nella norma.</span>
+            </div>
+          ):(
+            <>
+              <div className="alert alert-info"><span className="alert-icon">ℹ</span>
+                <span className="alert-text">Gli ordini sotto potrebbero indicare errori di inserimento, condizioni di mercato eccezionali, o rotte con dinamiche particolari. Escludi quelli errati dal foglio (colonna COMPLETO=NO) per migliorare il modello.</span>
+              </div>
+              <div style={{overflowX:'auto'}}>
+                <table className="port-table">
+                  <thead>
+                    <tr>
+                      <th>Ordine</th><th>Destinazione</th><th>Porto</th><th>Modalità</th>
+                      <th>€/ton reale</th><th>€/ton previsto</th><th>Scarto</th><th>Z-score</th><th>Tipo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {allAnomalies.slice(0,30).map((a,i)=>(
+                      <tr key={i} className={a.isExtreme?'':'best-row'} style={a.isExtreme?{background:'rgba(247,106,106,0.04)'}:{}}>
+                        <td style={{fontWeight:600}}>{a.ordine}</td>
+                        <td>{a.destinazione}</td>
+                        <td>{a.porto}</td>
+                        <td style={{color:'var(--text2)',fontSize:'0.75rem'}}>{a.modalita}</td>
+                        <td style={{fontWeight:600}}>€{a.euroTon.toFixed(2)}</td>
+                        <td style={{color:'var(--text2)'}}>€{a.pred.toFixed(2)}</td>
+                        <td style={{color:a.direction==='ALTO'?'var(--danger)':'var(--accent)'}}>
+                          {a.direction==='ALTO'?'+':''}{a.percentDiff.toFixed(1)}%
+                        </td>
+                        <td>{a.zScore.toFixed(2)}σ</td>
+                        <td><span className={`anomaly-badge ${a.isExtreme?'badge-high':'badge-low'}`}>
+                          {a.isExtreme?'ESTREMO':'INSOLITO'}
+                        </span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── TAB: TREND ── */}
+      {activeTab==='trend'&&(
+        <div className="fade-in">
+          {['CONTAINER','TRUCK'].map(mod=>{
+            const t=computeTrendAndForecast(orders,'',mod,3);
+            if(!t) return (
+              <div key={mod} className="card">
+                <div className="card-title">{mod} — Trend globale <div className="card-title-line"/></div>
+                <p style={{color:'var(--text2)',fontSize:'0.82rem'}}>Dati insufficienti per questa modalità.</p>
+              </div>
+            );
+            return (
+              <div key={mod} className="card">
+                <div className="card-title">{mod} — Trend globale (tutte le rotte) <div className="card-title-line"/>
+                  <span style={{fontSize:'0.72rem',fontWeight:600,
+                    color:t.trendPct>2?'var(--danger)':t.trendPct<-2?'var(--accent)':'var(--text2)'}}>
+                    {t.trendPct>0?'▲':'▼'}{Math.abs(t.trendPct).toFixed(1)}%/mese
+                  </span>
+                </div>
+                <div style={{display:'flex',gap:24,flexWrap:'wrap',marginBottom:14}}>
+                  <div>
+                    <div style={{fontSize:'0.62rem',color:'var(--text2)'}}>Ordini analizzati</div>
+                    <div style={{fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:'1.3rem',color:'var(--accent)'}}>{t.totalOrders}</div>
+                  </div>
+                  <div>
+                    <div style={{fontSize:'0.62rem',color:'var(--text2)'}}>Variazione mensile</div>
+                    <div style={{fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:'1.3rem',
+                      color:t.slope>0?'var(--danger)':'var(--accent)'}}>
+                      {t.slope>0?'+':''}€{t.slope.toFixed(2)}/mese
                     </div>
-
-                    <div>
-                      <label className="block mb-2 font-semibold flex items-center gap-2">
-                        <Truck />
-                        Modalità
-                      </label>
-                      <select value={modalita} onChange={(e) => setModalita(e.target.value)} className="w-full px-4 py-3 border rounded-lg">
-                        <option value="">Seleziona...</option>
-                        <option value="CONTAINER">Container</option>
-                        <option value="TRUCK">Camion</option>
-                      </select>
+                  </div>
+                  <div>
+                    <div style={{fontSize:'0.62rem',color:'var(--text2)'}}>Forecast +3 mesi</div>
+                    <div style={{fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:'1.3rem',color:'var(--accent2)'}}>
+                      €{t.forecasts[2]?.avg.toFixed(2)||'N/D'}/ton
                     </div>
-
-                    <div>
-                      <label className="block mb-2 font-semibold">Tonnellate</label>
-                      <input
-                        type="number"
-                        value={tonnellate}
-                        onChange={(e) => setTonnellate(e.target.value)}
-                        placeholder="es. 25"
-                        step="0.01"
-                        className="w-full px-4 py-3 border rounded-lg"
-                      />
+                  </div>
+                  <div>
+                    <div style={{fontSize:'0.62rem',color:'var(--text2)'}}>Affidabilità trend (R²)</div>
+                    <div style={{fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:'1.3rem',color:'var(--text2)'}}>
+                      {(t.trendR2*100).toFixed(0)}%
                     </div>
-
-                    <button
-                      onClick={calculateBestOption}
-                      disabled={isCalculating}
-                      className="w-full bg-indigo-600 text-white font-bold py-4 rounded-lg flex items-center justify-center gap-2 disabled:bg-gray-400"
-                    >
-                      <Calculator />
-                      {isCalculating ? 'Calcolo...' : 'Calcola Preventivo'}
-                    </button>
                   </div>
                 </div>
-
-                {risultato && (
-                  <div className="bg-white rounded-2xl shadow-xl p-8">
-                    {risultato.isTariffario && (
-                      <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-6">
-                        <p className="text-sm text-blue-800">
-                          <strong>📋 Tariffario</strong> - Costo da tariffario trasporti
-                        </p>
-                      </div>
-                    )}
-                    
-                    {risultato.isEstimated && !risultato.isTariffario && (
-                      <div className="bg-amber-50 border-l-4 border-amber-500 p-4 mb-6">
-                        <p className="text-sm text-amber-800">
-                          <strong>⚠️ Stima</strong> - Basata su {risultato.referenceDestinations.length} destinazioni vicine
-                        </p>
-                      </div>
-                    )}
-
-                    <div className="flex items-center gap-3 mb-6">
-                      <TrendingDown />
-                      <h2 className="text-2xl font-bold">Preventivo</h2>
-                    </div>
-
-                    <div className="grid md:grid-cols-2 gap-4 mb-6">
-                      <div className="bg-indigo-50 p-6 rounded-xl">
-                        <p className="text-sm text-gray-600">{risultato.isTariffario ? 'Partenza' : 'Porto'}</p>
-                        <p className="text-2xl font-bold text-indigo-700">{risultato.porto}</p>
-                      </div>
-                      <div className="bg-indigo-50 p-6 rounded-xl">
-                        <p className="text-sm text-gray-600">{risultato.isTariffario ? 'Partner' : 'Forwarder'}</p>
-                        <p className="text-2xl font-bold text-indigo-700">{risultato.forwarder}</p>
-                      </div>
-                    </div>
-
-                    <div className="bg-green-50 p-6 rounded-xl mb-6">
-                      <h3 className="font-semibold text-gray-700 mb-4">Riepilogo Costi</h3>
-                      <div className="space-y-3">
-                        {!risultato.isTariffario && (
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm text-gray-600">Costi Fissi (porto + dogana + servizi)</span>
-                            <span className="text-lg font-bold text-gray-800">€{risultato.costiFissi}</span>
+                <div className="trend-chart" style={{height:100}}>
+                  <TrendChart series={t.series} forecasts={t.forecasts}
+                    color={t.trendPct>2?'#f76a6a':t.trendPct<-2?'#00e5a0':'#7c6af7'}/>
+                </div>
+                <div style={{display:'flex',justifyContent:'space-between',marginTop:4,fontSize:'0.6rem',color:'var(--text2)'}}>
+                  <span>{t.series[0]?.label}</span>
+                  <span style={{color:'var(--accent2)'}}>— — forecast</span>
+                  <span style={{color:'var(--accent2)'}}>{t.forecasts[t.forecasts.length-1]?.label}</span>
+                </div>
+                {t.seasonality.length>2&&(
+                  <>
+                    <div className="divider"/>
+                    <div style={{fontSize:'0.68rem',color:'var(--text2)',marginBottom:8,letterSpacing:'0.05em'}}>STAGIONALITÀ</div>
+                    <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+                      {t.seasonality.map(s=>(
+                        <div key={s.month} style={{
+                          flex:'0 0 auto',textAlign:'center',padding:'6px 10px',borderRadius:6,
+                          background:s.relDiff>5?'rgba(247,106,106,0.15)':s.relDiff<-5?'rgba(0,229,160,0.15)':'var(--surface2)',
+                          border:`1px solid ${s.relDiff>5?'rgba(247,106,106,0.3)':s.relDiff<-5?'rgba(0,229,160,0.3)':'var(--border)'}`,
+                        }}>
+                          <div style={{fontSize:'0.6rem',color:'var(--text2)'}}>{s.name}</div>
+                          <div style={{fontFamily:'Syne,sans-serif',fontSize:'0.85rem',fontWeight:700,
+                            color:s.relDiff>5?'var(--danger)':s.relDiff<-5?'var(--accent)':'var(--text)'}}>
+                            {s.relDiff>0?'+':''}{s.relDiff.toFixed(0)}%
                           </div>
-                        )}
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm text-gray-600">
-                            {risultato.isTariffario ? 'Costo Trasporto' : `Inland (trasporto ${risultato.porto} → destinazione)`}
-                          </span>
-                          <span className="text-lg font-bold text-gray-800">€{risultato.inland}</span>
+                          <div style={{fontSize:'0.58rem',color:'var(--text2)'}}>{s.count} ord.</div>
                         </div>
-                        <div className="border-t-2 border-green-200 pt-3 mt-3">
-                          <div className="flex justify-between items-center">
-                            <span className="text-base font-semibold text-gray-700">Costo Totale</span>
-                            <span className="text-2xl font-bold text-green-700">€{risultato.costoTotale}</span>
-                          </div>
-                          <div className="flex justify-between items-center mt-2">
-                            <span className="text-sm text-gray-600">Costo per Tonnellata</span>
-                            <span className="text-lg font-bold text-green-700">€{risultato.costoPerTon}/ton</span>
-                          </div>
-                          <p className="text-xs text-gray-500 mt-2">
-                            ({risultato.tonnellate} tonnellate)
-                          </p>
-                        </div>
-                      </div>
+                      ))}
                     </div>
+                    {/* Mese più economico */}
+                    {(()=>{
+                      const bestMonth=t.seasonality.reduce((a,b)=>a.relDiff<b.relDiff?a:b);
+                      const worstMonth=t.seasonality.reduce((a,b)=>a.relDiff>b.relDiff?a:b);
+                      return (
+                        <div style={{display:'flex',gap:10,marginTop:14,flexWrap:'wrap'}}>
+                          <div className="alert alert-ok" style={{margin:0,flex:1,minWidth:160}}>
+                            <span className="alert-icon">📉</span>
+                            <span className="alert-text">Mese più economico: <strong>{bestMonth.name}</strong> ({bestMonth.relDiff.toFixed(0)}% vs media)</span>
+                          </div>
+                          <div className="alert alert-danger" style={{margin:0,flex:1,minWidth:160}}>
+                            <span className="alert-icon">📈</span>
+                            <span className="alert-text">Mese più caro: <strong>{worstMonth.name}</strong> (+{worstMonth.relDiff.toFixed(0)}% vs media)</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {/* ── TAB: SOSTE ── */}
+      {activeTab==='sosta'&&(
+        <div className="fade-in">
+          {!sostaStats?(
+            <div className="card">
+              <div className="card-title">Analisi Soste Container <div className="card-title-line"/></div>
+              <div className="alert alert-info">
+                <span className="alert-icon">🚢</span>
+                <span className="alert-text">
+                  <strong>Dati di sosta non trovati.</strong><br/>
+                  Aggiungi queste colonne al Foglio 1 (formato gg/mm/aaaa):<br/>
+                  • <strong>DATA_RITIRO</strong> — data ritiro container dal porto<br/>
+                  • <strong>DATA_RESTITUZIONE</strong> — data restituzione ultimo vuoto della BL<br/>
+                  La colonna <strong>NR CNTR</strong> è già presente e verrà usata automaticamente per normalizzare le soste su BL multi-container.
+                </span>
+              </div>
+            </div>
+          ):(
+            <>
+              {/* GLOBAL STATS */}
+              <div className="stat-row" style={{gridTemplateColumns:'repeat(3,1fr)'}}>
+                <div className="stat-box">
+                  <div className="stat-label">Sosta media globale</div>
+                  <div className="stat-value" style={{color:sostaStats.globalAvg>28?'var(--danger)':sostaStats.globalAvg>14?'var(--warn)':'var(--accent)'}}>
+                    {sostaStats.globalAvg.toFixed(0)} gg
+                  </div>
+                  <div className="stat-sub">±{sostaStats.globalStd.toFixed(0)} giorni std</div>
+                </div>
+                <div className="stat-box">
+                  <div className="stat-label">BL con dati sosta</div>
+                  <div className="stat-value">{sostaStats.totalWithData}</div>
+                  <div className="stat-sub">ordini analizzati</div>
+                </div>
+                <div className="stat-box">
+                  <div className="stat-label">Free time standard</div>
+                  <div className="stat-value" style={{color:'var(--text2)'}}>14 gg</div>
+                  <div className="stat-sub">soglia detention default</div>
+                </div>
+              </div>
 
-                    {!risultato.isTariffario && risultato.numOrdiniStorici > 0 && (
-                      <p className="text-sm text-gray-500 mt-4">Basato su {risultato.numOrdiniStorici} ordini storici</p>
-                    )}
+              {/* SOSTA PER PORTO */}
+              {sostaStats.portoStats.length>0&&(
+                <div className="card">
+                  <div className="card-title">Sosta media per porto di arrivo <div className="card-title-line"/></div>
+                  <table className="port-table">
+                    <thead>
+                      <tr><th>Porto</th><th>Sosta media</th><th>% oltre free time</th><th>BL analizzate</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                      {sostaStats.portoStats.map((p,i)=>(
+                        <tr key={p.porto} className={i===0?'best-row':''}>
+                          <td style={{fontWeight:600}}>{p.porto}</td>
+                          <td style={{color:p.avg>28?'var(--danger)':p.avg>14?'var(--warn)':'var(--accent)',fontWeight:700}}>
+                            {p.avg.toFixed(0)} giorni
+                          </td>
+                          <td style={{color:p.detentionPct>30?'var(--danger)':p.detentionPct>15?'var(--warn)':'var(--text2)'}}>
+                            {p.detentionPct.toFixed(0)}%
+                          </td>
+                          <td style={{color:'var(--text2)'}}>{p.count}</td>
+                          <td>
+                            <span className={`port-badge ${p.avg<=14?'badge-best':p.avg<=28?'badge-alt':'badge-high'}`}>
+                              {p.avg<=14?'OK':p.avg<=28?'WATCH':'ALTO'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* SOSTA PER DESTINAZIONE */}
+              <div className="card">
+                <div className="card-title">
+                  Sosta per destinazione
+                  <div className="card-title-line"/>
+                  <span style={{fontSize:'0.68rem',color:'var(--text2)'}}>normalizzata per NR CNTR</span>
+                </div>
+                {sostaStats.destStats.length===0?(
+                  <p style={{color:'var(--text2)',fontSize:'0.82rem'}}>Nessuna destinazione con dati di sosta sufficienti.</p>
+                ):(
+                  <div className="sosta-grid">
+                    {sostaStats.destStats.slice(0,24).map((d,i)=>{
+                      const isHigh=d.avg>28, isWarn=d.avg>14&&!isHigh, isOk=d.avg<=14;
+                      const maxAvg=sostaStats.destStats[0].avg;
+                      return (
+                        <div key={i} className={`sosta-cell${isHigh?' sosta-danger':isWarn?' sosta-warn':' sosta-ok'}`}>
+                          <div className="sosta-dest" title={d.dest}>{d.dest}</div>
+                          <div className="sosta-days" style={{color:isHigh?'var(--danger)':isWarn?'var(--warn)':'var(--accent)'}}>
+                            {d.avg.toFixed(0)}<span style={{fontSize:'0.7rem',fontWeight:400,color:'var(--text2)'}}> gg</span>
+                          </div>
+                          <div className="sosta-detail">
+                            {d.avgPerCntr&&<>~{d.avgPerCntr.toFixed(0)} gg/cntr · </>}
+                            {d.detentionPct.toFixed(0)}% oltre ft<br/>
+                            {d.avgTerminal!==null&&<>terminal: {d.avgTerminal.toFixed(0)}gg · </>}
+                            {d.avgUtilizzo!==null&&<>uso: {d.avgUtilizzo.toFixed(0)}gg<br/></>}
+                            max {d.max}gg · {d.count} BL
+                          </div>
+                          <div className="sosta-bar">
+                            <div className="sosta-bar-fill" style={{
+                              width:`${(d.avg/maxAvg)*100}%`,
+                              background:isHigh?'var(--danger)':isWarn?'var(--warn)':'var(--accent)'
+                            }}/>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
-            </div>
-          );
-        };
 
-        ReactDOM.render(<App />, document.getElementById('root'));
-    </script>
+              {/* INSIGHT SOSTA */}
+              {(()=>{
+                const worst=sostaStats.destStats.slice(0,3);
+                const best=sostaStats.destStats.slice(-3).reverse();
+                if(worst.length===0) return null;
+                return (
+                  <div className="card">
+                    <div className="card-title">Insight operativi <div className="card-title-line"/></div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,flexWrap:'wrap'}}>
+                      <div>
+                        <div style={{fontSize:'0.68rem',color:'var(--danger)',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:8}}>⚠ Destinazioni critiche</div>
+                        {worst.map((d,i)=>(
+                          <div key={i} style={{padding:'8px 0',borderBottom:'1px solid var(--border)',fontSize:'0.82rem'}}>
+                            <strong>{d.dest}</strong> — {d.avg.toFixed(0)} gg (detention {d.detentionPct.toFixed(0)}% BL)
+                          </div>
+                        ))}
+                      </div>
+                      <div>
+                        <div style={{fontSize:'0.68rem',color:'var(--accent)',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:8}}>✓ Destinazioni efficienti</div>
+                        {best.map((d,i)=>(
+                          <div key={i} style={{padding:'8px 0',borderBottom:'1px solid var(--border)',fontSize:'0.82rem'}}>
+                            <strong>{d.dest}</strong> — {d.avg.toFixed(0)} gg (detention {d.detentionPct.toFixed(0)}% BL)
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.render(<App/>, document.getElementById('root'));
+</script>
 </body>
 </html>
